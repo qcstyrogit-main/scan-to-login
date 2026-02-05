@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Employee, Checkin } from '@/types';
 import { Clock, Shield, Users, Zap, Eye, EyeOff, Loader2 } from 'lucide-react';
+import { erpRequest, extractErrorMessage } from '@/lib/erpApi';
 
 interface LoginPageProps {
   onLogin: (employee: Employee, latestCheckin?: Checkin) => void;
@@ -15,37 +16,64 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  const buildEmployeeFromErp = (user: any, loginEmail: string): Employee => {
+    const userId = typeof user === 'string' ? user : (user?.name || user?.user || user?.email || loginEmail);
+    const userEmail = user?.email || (typeof user === 'string' && user.includes('@') ? user : loginEmail);
+    const baseName = typeof user === 'string' ? user.split('@')[0] : undefined;
+    const fullName = user?.full_name || user?.fullName || baseName || loginEmail.split('@')[0] || 'Employee';
+    const department = user?.department || user?.dept || 'General';
+    const isAdmin = userId === 'Administrator' || user?.user_type === 'System User';
+    return {
+      id: userId,
+      email: userEmail,
+      full_name: fullName,
+      department,
+      role: isAdmin ? 'admin' : 'employee',
+    };
+  };
+
+  const erpLogin = async (loginEmail: string, loginPassword: string): Promise<Employee> => {
+    const loginRes = await erpRequest('/api/method/qcmc_logic.api.login_scan.login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: { username: loginEmail, password: loginPassword }
+    });
+
+    const loginData = loginRes.data;
+    const payload = loginData?.message ?? loginData;
+    if (!loginRes.ok) {
+      throw new Error(extractErrorMessage(payload, `Login failed (HTTP ${loginRes.status})`));
+    }
+    if (!payload?.success) {
+      throw new Error(extractErrorMessage(payload, 'Invalid credentials or empty ERP response'));
+    }
+
+    const userSource = payload?.user || loginEmail;
+    const emp = buildEmployeeFromErp(userSource, loginEmail);
+    const fullName = loginData?.full_name || payload?.full_name;
+    if (fullName) {
+      emp.full_name = fullName;
+    }
+    return emp;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setLoading(true);
 
     try {
-      const { data, error: funcError } = await supabase.functions.invoke('employee-auth', {
-        body: { action: 'login', email, password }
-      });
-
-      if (funcError) {
-        setError('Connection error. Please try again.');
-        setLoading(false);
-        return;
-      }
-
-      if (!data.success) {
-        setError(data.error || 'Invalid credentials');
-        setLoading(false);
-        return;
-      }
-
       if (rememberMe) {
         localStorage.setItem('rememberedEmail', email);
       } else {
         localStorage.removeItem('rememberedEmail');
       }
 
-      onLogin(data.employee, data.latestCheckin);
+      const emp = await erpLogin(email, password);
+      onLogin(emp, undefined);
     } catch (err) {
-      setError('An unexpected error occurred');
+      const msg = err instanceof Error ? err.message : 'An unexpected error occurred';
+      setError(String(msg));
     } finally {
       setLoading(false);
     }

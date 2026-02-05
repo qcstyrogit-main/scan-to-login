@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
+import { Capacitor } from '@capacitor/core';
+import { Geolocation } from '@capacitor/geolocation';
 import { Clock, LogIn, LogOut, Coffee, Play, Camera, QrCode, Check, X, Loader2, Home, User, Users, Menu, MapPin, Calendar, Timer, ArrowRight, Filter, Download, Search, RefreshCw, Building2, Mail, Phone, Shield, Eye, EyeOff, Zap } from 'lucide-react';
+import { erpRequest, extractErrorMessage } from '@/lib/erpApi';
 
 interface Employee {
   id: string;
@@ -37,6 +40,47 @@ const AppLayout: React.FC = () => {
   const [error, setError] = useState('');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
+  const buildEmployeeFromErp = (user: any, loginEmail: string): Employee => {
+    const userId = typeof user === 'string' ? user : (user?.name || user?.user || user?.email || loginEmail);
+    const userEmail = user?.email || (typeof user === 'string' && user.includes('@') ? user : loginEmail);
+    const baseName = typeof user === 'string' ? user.split('@')[0] : undefined;
+    const fullName = user?.full_name || user?.fullName || baseName || loginEmail.split('@')[0] || 'Employee';
+    const department = user?.department || user?.dept || 'General';
+    const isAdmin = userId === 'Administrator' || user?.user_type === 'System User';
+    return {
+      id: userId,
+      email: userEmail,
+      full_name: fullName,
+      department,
+      role: isAdmin ? 'admin' : 'employee',
+    };
+  };
+
+  const erpLogin = async (loginEmail: string, loginPassword: string): Promise<Employee> => {
+    const loginRes = await erpRequest('/api/method/qcmc_logic.api.login_scan.login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: { username: loginEmail, password: loginPassword }
+    });
+
+    const loginData = loginRes.data;
+    const payload = loginData?.message ?? loginData;
+    if (!loginRes.ok) {
+      throw new Error(extractErrorMessage(payload, `Login failed (HTTP ${loginRes.status})`));
+    }
+    if (!payload?.success) {
+      throw new Error(extractErrorMessage(payload, 'Invalid credentials or empty ERP response'));
+    }
+
+    const userSource = payload?.user || loginEmail;
+    const emp = buildEmployeeFromErp(userSource, loginEmail);
+    const fullName = loginData?.full_name || payload?.full_name;
+    if (fullName) {
+      emp.full_name = fullName;
+    }
+    return emp;
+  };
+
   useEffect(() => {
     const storedEmployee = localStorage.getItem('employee');
     if (storedEmployee) {
@@ -66,20 +110,14 @@ const AppLayout: React.FC = () => {
     setError('');
     setLoginLoading(true);
     try {
-      const { data } = await supabase.functions.invoke('auth-v2', {
-        body: { action: 'login', email, password }
-      });
-      if (!data?.success) {
-        setError(data?.error || 'Invalid credentials');
-        setLoginLoading(false);
-        return;
-      }
-      setEmployee(data.employee);
-      setLatestCheckin(data.latestCheckin);
-      localStorage.setItem('employee', JSON.stringify(data.employee));
-      fetchCheckins(data.employee.id);
+      const emp = await erpLogin(email, password);
+      setEmployee(emp);
+      setLatestCheckin(undefined);
+      localStorage.setItem('employee', JSON.stringify(emp));
+      fetchCheckins(emp.id);
     } catch (err) {
-      setError('Connection error');
+      const msg = err instanceof Error ? err.message : 'Connection error';
+      setError(String(msg));
     } finally {
       setLoginLoading(false);
     }
@@ -93,18 +131,122 @@ const AppLayout: React.FC = () => {
     localStorage.removeItem('employee');
   };
 
+  const ensureLocationPermission = async () => {
+    const platform = Capacitor.getPlatform();
+    const isNative = platform === 'android' || platform === 'ios';
+
+    if (isNative) {
+      const current = await Geolocation.checkPermissions();
+      const hasPermission =
+        current.location === 'granted' ||
+        ((current as any).coarseLocation === 'granted');
+
+      if (hasPermission) {
+        return;
+      }
+
+      const requested = await Geolocation.requestPermissions();
+      const granted =
+        requested.location === 'granted' ||
+        ((requested as any).coarseLocation === 'granted');
+
+      if (!granted) {
+        throw new Error('Location permission is required to check in. Please enable it in app settings.');
+      }
+      return;
+    }
+
+    if (typeof navigator !== 'undefined' && 'permissions' in navigator) {
+      try {
+        const permission = await navigator.permissions.query({ name: 'geolocation' });
+        if (permission.state === 'denied') {
+          throw new Error('Location permission is blocked in your browser. Please enable it and try again.');
+        }
+      } catch {
+        // Browser does not fully support permissions query.
+      }
+    }
+  };
+
+  const getCurrentLocation = async (): Promise<{ latitude: number; longitude: number }> => {
+    await ensureLocationPermission();
+
+    const platform = Capacitor.getPlatform();
+    const isNative = platform === 'android' || platform === 'ios';
+    if (isNative) {
+      const position = await Geolocation.getCurrentPosition({
+        enableHighAccuracy: true,
+        timeout: 10000
+      });
+      return {
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude
+      };
+    }
+
+    if (!navigator.geolocation) {
+      throw new Error('Geolocation not supported');
+    }
+
+    const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+      navigator.geolocation.getCurrentPosition(resolve, reject, {
+        enableHighAccuracy: true,
+        timeout: 10000
+      });
+    });
+
+    return {
+      latitude: position.coords.latitude,
+      longitude: position.coords.longitude
+    };
+  };
+
   const handleCheckin = async (checkType: 'in' | 'out' | 'break_start' | 'break_end') => {
     if (!employee) return;
     try {
-      const { data } = await supabase.functions.invoke('employee-checkin', {
-        body: { employeeId: employee.id, checkType, location: 'Main Office', scanCode: `SCAN-${Date.now()}` }
+      const { latitude, longitude } = await getCurrentLocation();
+      const platform = Capacitor.getPlatform();
+      const rawUa = typeof navigator !== 'undefined' ? navigator.userAgent : 'unknown';
+      const compactUa = rawUa.replace(/\s+/g, ' ').replace(/[^\w.\- /]/g, '').slice(0, 110);
+      const deviceId = `${platform.toUpperCase()}-${compactUa}`.slice(0, 140);
+
+      const logType = checkType === 'out' || checkType === 'break_start' ? 'OUT' : 'IN';
+      const res = await erpRequest('/api/method/qcmc_logic.api.login_scan.create_employee_checkin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: {
+          log_type: logType,
+          latitude,
+          longitude,
+          device_id: deviceId
+        }
       });
-      if (data?.success) {
-        setLatestCheckin(data.checkin);
-        setCheckins(prev => [data.checkin, ...prev]);
+
+      const data = res.data;
+      const payload = data?.message ?? data;
+      if (!res.ok) {
+        throw new Error(extractErrorMessage(payload, `Check-in failed (HTTP ${res.status})`));
       }
+      if (!payload?.success) {
+        throw new Error(extractErrorMessage(payload, 'Check-in failed or empty ERP response'));
+      }
+
+      const checkin: Checkin = {
+        id: payload?.checkin || `CHK-${Date.now()}`,
+        employee_id: payload?.employee || employee.id,
+        check_type: checkType,
+        timestamp: payload?.time || new Date().toISOString(),
+        location: 'Main Office',
+        scan_code: `SCAN-${Date.now()}`
+      };
+
+      setLatestCheckin(checkin);
+      setCheckins(prev => [checkin, ...prev]);
     } catch (err) {
       console.error('Checkin error:', err);
+      const msg = err instanceof Error ? err.message : 'Check-in failed';
+      setError(msg);
+      window.alert(msg);
     }
   };
 
