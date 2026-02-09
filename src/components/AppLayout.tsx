@@ -1,57 +1,78 @@
 import React, { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabase';
 import { Capacitor } from '@capacitor/core';
-import { Geolocation } from '@capacitor/geolocation';
 import { Clock, LogIn, LogOut, Coffee, Play, Camera, QrCode, Check, X, Loader2, Home, User, Users, Menu, MapPin, Calendar, Timer, ArrowRight, Filter, Download, Search, RefreshCw, Building2, Mail, Phone, Shield, Eye, EyeOff, Zap } from 'lucide-react';
-import { erpRequest, extractErrorMessage } from '@/lib/erpApi';
+import { erpRequest, extractErrorMessage, setErpSid } from '@/lib/erpApi';
+import { toast } from '@/components/ui/sonner';
+import { getCurrentLocation } from '@/lib/location';
+import type { Checkin } from '@/types';
+import HistoryMap from '@/components/HistoryMap';
 
 interface Employee {
   id: string;
   email: string;
   full_name: string;
   department: string;
+  company?: string;
+  custom_location?: string;
+  designation?: string;
   role: 'employee' | 'admin';
   avatar_url?: string;
   phone?: string;
   latestCheckin?: Checkin;
 }
 
-interface Checkin {
-  id: string;
-  employee_id: string;
-  check_type: 'in' | 'out' | 'break_start' | 'break_end';
-  timestamp: string;
-  location?: string;
-  scan_code?: string;
-}
-
 type ViewType = 'dashboard' | 'scan' | 'history' | 'profile' | 'admin';
 
 const AppLayout: React.FC = () => {
+  const GEOFENCE_CHECK_INTERVAL_MS = 5000;
   const [employee, setEmployee] = useState<Employee | null>(null);
   const [latestCheckin, setLatestCheckin] = useState<Checkin | undefined>(undefined);
   const [checkins, setCheckins] = useState<Checkin[]>([]);
   const [currentView, setCurrentView] = useState<ViewType>('dashboard');
   const [loading, setLoading] = useState(true);
   const [loginLoading, setLoginLoading] = useState(false);
+  const [checkinLoading, setCheckinLoading] = useState(false);
+  const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [geoStatus, setGeoStatus] = useState<{
+    checking: boolean;
+    allowed: boolean;
+    message: string;
+    distanceMeters?: number;
+    initialized: boolean;
+  }>({
+    checking: false,
+    allowed: false,
+    message: 'Checking location...',
+    initialized: false,
+  });
 
-  const buildEmployeeFromErp = (user: any, loginEmail: string): Employee => {
-    const userId = typeof user === 'string' ? user : (user?.name || user?.user || user?.email || loginEmail);
-    const userEmail = user?.email || (typeof user === 'string' && user.includes('@') ? user : loginEmail);
+  const buildEmployeeFromErp = (user: any, loginEmail: string, context: any = {}): Employee => {
+    const userObj = typeof user === 'object' && user ? user : {};
+    const source = { ...context, ...userObj };
+    const fallbackId = typeof user === 'string' ? user : undefined;
+    const fallbackEmail = typeof user === 'string' && user.includes('@') ? user : undefined;
+    const userId = source?.name || source?.user || source?.email || fallbackId || loginEmail;
+    const userEmail = source?.email || fallbackEmail || loginEmail;
     const baseName = typeof user === 'string' ? user.split('@')[0] : undefined;
-    const fullName = user?.full_name || user?.fullName || baseName || loginEmail.split('@')[0] || 'Employee';
-    const department = user?.department || user?.dept || 'General';
-    const isAdmin = userId === 'Administrator' || user?.user_type === 'System User';
+    const fullName = source?.full_name || source?.fullName || baseName || loginEmail.split('@')[0] || 'Employee';
+    const department = source?.department || source?.dept || 'General';
+    const company = source?.company || '-';
+    const customLocation = source?.custom_location || '-';
+    const designation = source?.designation || '-';
+    const isAdmin = userId === 'Administrator' || source?.user_type === 'System User';
     return {
       id: userId,
       email: userEmail,
       full_name: fullName,
       department,
+      company,
+      custom_location: customLocation,
+      designation,
       role: isAdmin ? 'admin' : 'employee',
     };
   };
@@ -71,9 +92,10 @@ const AppLayout: React.FC = () => {
     if (!payload?.success) {
       throw new Error(extractErrorMessage(payload, 'Invalid credentials or empty ERP response'));
     }
+    setErpSid(payload?.sid || loginData?.sid || '');
 
-    const userSource = payload?.user || loginEmail;
-    const emp = buildEmployeeFromErp(userSource, loginEmail);
+    const userSource = payload?.user || loginData?.user || loginEmail;
+    const emp = buildEmployeeFromErp(userSource, loginEmail, { ...loginData, ...payload });
     const fullName = loginData?.full_name || payload?.full_name;
     if (fullName) {
       emp.full_name = fullName;
@@ -86,22 +108,67 @@ const AppLayout: React.FC = () => {
     if (storedEmployee) {
       const emp = JSON.parse(storedEmployee);
       setEmployee(emp);
-      fetchCheckins(emp.id);
+      fetchCheckins();
     }
     setLoading(false);
   }, []);
 
-  const fetchCheckins = async (employeeId: string) => {
+  const mapErpCheckType = (value: any): Checkin['check_type'] => {
+    const text = String(value || '').toLowerCase();
+    if (text === 'in' || text === 'check in') return 'in';
+    if (text === 'out' || text === 'check out') return 'out';
+    return 'out';
+  };
+
+  const toNumber = (value: any) => {
+    const num = Number(value);
+    return Number.isFinite(num) ? num : undefined;
+  };
+
+  const fetchCheckins = async () => {
     try {
-      const { data } = await supabase.functions.invoke('auth-v2', {
-        body: { action: 'get_history', employeeId }
+      const res = await erpRequest('/api/method/qcmc_logic.api.login_scan.get_checkin_history', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: {}
       });
-      if (data?.success) {
-        setCheckins(data.checkins);
-        if (data.checkins.length > 0) setLatestCheckin(data.checkins[0]);
-      }
+
+      const raw = res.data?.message ?? res.data;
+      const list = Array.isArray(raw)
+        ? raw
+        : Array.isArray(raw?.data)
+          ? raw.data
+          : Array.isArray(raw?.checkins)
+            ? raw.checkins
+            : [];
+
+      const normalized: Checkin[] = list.map((item: any, idx: number) => ({
+        id: item?.name || item?.id || `CHK-HIST-${idx}`,
+        employee_id: item?.employee || item?.employee_id || employee?.id || '',
+        check_type: mapErpCheckType(item?.log_type || item?.check_type || item?.type),
+        timestamp: item?.time || item?.timestamp || item?.creation || new Date().toISOString(),
+        location:
+          item?.custom_location_name ||
+          item?.location_name ||
+          item?.custom_location ||
+          item?.location ||
+          item?.branch ||
+          undefined,
+        scan_code: item?.scan_code || item?.name || undefined,
+        latitude: toNumber(item?.latitude ?? item?.lat),
+        longitude: toNumber(item?.longitude ?? item?.lng)
+      }));
+
+      const sorted = normalized.sort(
+        (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+      );
+
+      setCheckins(sorted);
+      setLatestCheckin(sorted[0]);
     } catch (err) {
       console.error('Error fetching checkins:', err);
+      setCheckins([]);
+      setLatestCheckin(undefined);
     }
   };
 
@@ -114,7 +181,7 @@ const AppLayout: React.FC = () => {
       setEmployee(emp);
       setLatestCheckin(undefined);
       localStorage.setItem('employee', JSON.stringify(emp));
-      fetchCheckins(emp.id);
+      fetchCheckins();
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Connection error';
       setError(String(msg));
@@ -129,82 +196,67 @@ const AppLayout: React.FC = () => {
     setCheckins([]);
     setCurrentView('dashboard');
     localStorage.removeItem('employee');
+    setErpSid('');
   };
 
-  const ensureLocationPermission = async () => {
-    const platform = Capacitor.getPlatform();
-    const isNative = platform === 'android' || platform === 'ios';
-
-    if (isNative) {
-      const current = await Geolocation.checkPermissions();
-      const hasPermission =
-        current.location === 'granted' ||
-        ((current as any).coarseLocation === 'granted');
-
-      if (hasPermission) {
-        return;
-      }
-
-      const requested = await Geolocation.requestPermissions();
-      const granted =
-        requested.location === 'granted' ||
-        ((requested as any).coarseLocation === 'granted');
-
-      if (!granted) {
-        throw new Error('Location permission is required to check in. Please enable it in app settings.');
-      }
-      return;
-    }
-
-    if (typeof navigator !== 'undefined' && 'permissions' in navigator) {
-      try {
-        const permission = await navigator.permissions.query({ name: 'geolocation' });
-        if (permission.state === 'denied') {
-          throw new Error('Location permission is blocked in your browser. Please enable it and try again.');
+  const refreshGeofenceStatus = async () => {
+    if (!employee) return;
+    setGeoStatus((prev) => ({ ...prev, checking: true }));
+    try {
+      const { latitude, longitude } = await getCurrentLocation('checkin');
+      const res = await erpRequest('/api/method/qcmc_logic.api.login_scan.validate_checkin_radius', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: {
+          latitude,
+          longitude,
+          allowed_radius_meters: 50
         }
-      } catch {
-        // Browser does not fully support permissions query.
-      }
+      });
+      const data = res.data?.message ?? res.data;
+      const rawAllowed = data?.allowed;
+      const allowed =
+        rawAllowed === true ||
+        rawAllowed === 'true' ||
+        rawAllowed === 1 ||
+        rawAllowed === '1';
+      const distance = Number(data?.distance_meters);
+      setGeoStatus({
+        checking: false,
+        allowed,
+        distanceMeters: Number.isFinite(distance) ? distance : undefined,
+        initialized: true,
+        message: allowed
+          ? 'Inside allowed area'
+          : (extractErrorMessage(data, 'Outside allowed area')),
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unable to validate location';
+      setGeoStatus((prev) => ({
+        checking: false,
+        allowed: prev.initialized ? prev.allowed : false,
+        initialized: prev.initialized,
+        distanceMeters: prev.distanceMeters,
+        message: msg,
+      }));
     }
   };
 
-  const getCurrentLocation = async (): Promise<{ latitude: number; longitude: number }> => {
-    await ensureLocationPermission();
-
-    const platform = Capacitor.getPlatform();
-    const isNative = platform === 'android' || platform === 'ios';
-    if (isNative) {
-      const position = await Geolocation.getCurrentPosition({
-        enableHighAccuracy: true,
-        timeout: 10000
-      });
-      return {
-        latitude: position.coords.latitude,
-        longitude: position.coords.longitude
-      };
-    }
-
-    if (!navigator.geolocation) {
-      throw new Error('Geolocation not supported');
-    }
-
-    const position = await new Promise<GeolocationPosition>((resolve, reject) => {
-      navigator.geolocation.getCurrentPosition(resolve, reject, {
-        enableHighAccuracy: true,
-        timeout: 10000
-      });
-    });
-
-    return {
-      latitude: position.coords.latitude,
-      longitude: position.coords.longitude
-    };
-  };
+  useEffect(() => {
+    if (!employee || currentView !== 'scan') return;
+    refreshGeofenceStatus();
+    const interval = setInterval(refreshGeofenceStatus, GEOFENCE_CHECK_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, [employee, currentView]);
 
   const handleCheckin = async (checkType: 'in' | 'out' | 'break_start' | 'break_end') => {
     if (!employee) return;
+    setCheckinLoading(true);
     try {
-      const { latitude, longitude } = await getCurrentLocation();
+      if (!geoStatus.allowed) {
+        throw new Error(geoStatus.message || 'Check in/out is allowed only inside your branch radius');
+      }
+      const { latitude, longitude } = await getCurrentLocation('checkin');
       const platform = Capacitor.getPlatform();
       const rawUa = typeof navigator !== 'undefined' ? navigator.userAgent : 'unknown';
       const compactUa = rawUa.replace(/\s+/g, ' ').replace(/[^\w.\- /]/g, '').slice(0, 110);
@@ -236,17 +288,29 @@ const AppLayout: React.FC = () => {
         employee_id: payload?.employee || employee.id,
         check_type: checkType,
         timestamp: payload?.time || new Date().toISOString(),
-        location: 'Main Office',
-        scan_code: `SCAN-${Date.now()}`
+        location:
+          payload?.custom_location_name ||
+          payload?.location_name ||
+          payload?.custom_location ||
+          payload?.location ||
+          payload?.branch ||
+          undefined,
+        scan_code: `SCAN-${Date.now()}`,
+        latitude,
+        longitude
       };
 
       setLatestCheckin(checkin);
       setCheckins(prev => [checkin, ...prev]);
+      toast.success(checkType === 'in' ? 'Checked In successfully' : 'Checked Out successfully');
+      await fetchCheckins();
     } catch (err) {
       console.error('Checkin error:', err);
       const msg = err instanceof Error ? err.message : 'Check-in failed';
       setError(msg);
       window.alert(msg);
+    } finally {
+      setCheckinLoading(false);
     }
   };
 
@@ -264,6 +328,28 @@ const AppLayout: React.FC = () => {
     };
     return map[latestCheckin.check_type] || map.out;
   };
+
+  const isCheckedIn =
+    latestCheckin?.check_type === 'in' || latestCheckin?.check_type === 'break_end';
+  const nextCheckType: 'in' | 'out' = isCheckedIn ? 'out' : 'in';
+
+  useEffect(() => {
+    if (currentView !== 'history') return;
+    if (selectedHistoryId) {
+      const hasSelected = checkins.some(
+        (checkin) =>
+          checkin.id === selectedHistoryId &&
+          Number.isFinite(checkin.latitude) &&
+          Number.isFinite(checkin.longitude)
+      );
+      if (hasSelected) return;
+    }
+    const firstWithCoords = checkins.find(
+      (checkin) =>
+        Number.isFinite(checkin.latitude) && Number.isFinite(checkin.longitude)
+    );
+    setSelectedHistoryId(firstWithCoords?.id ?? null);
+  }, [currentView, checkins, selectedHistoryId]);
 
   if (loading) {
     return (
@@ -289,17 +375,17 @@ const AppLayout: React.FC = () => {
               <div className="w-12 h-12 bg-gradient-to-br from-blue-400 to-blue-600 rounded-xl flex items-center justify-center">
                 <Clock className="w-7 h-7 text-white" />
               </div>
-              <span className="text-2xl font-bold text-white">TimeTrack Pro</span>
+              <span className="text-2xl font-bold text-white">GeoTime QCMC</span>
             </div>
             <h1 className="text-4xl xl:text-5xl font-bold text-white mb-6 leading-tight">
               Streamline Your<br />
               <span className="bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">Employee Check-ins</span>
             </h1>
-            <p className="text-lg text-slate-300 mb-12 max-w-md">Fast, secure, and effortless time tracking with QR code scanning technology.</p>
+            <p className="text-lg text-slate-300 mb-12 max-w-md">Fast, secure, and effortless time tracking with a single click.</p>
             <div className="grid grid-cols-2 gap-6">
               <div className="bg-white/10 backdrop-blur-sm rounded-xl p-5 border border-white/10">
                 <Zap className="w-8 h-8 text-yellow-400 mb-3" />
-                <h3 className="text-white font-semibold mb-1">Instant Scan</h3>
+                <h3 className="text-white font-semibold mb-1">Instant Login</h3>
                 <p className="text-slate-400 text-sm">Check in within seconds</p>
               </div>
               <div className="bg-white/10 backdrop-blur-sm rounded-xl p-5 border border-white/10">
@@ -316,7 +402,7 @@ const AppLayout: React.FC = () => {
               <div className="w-10 h-10 bg-gradient-to-br from-blue-400 to-blue-600 rounded-xl flex items-center justify-center">
                 <Clock className="w-6 h-6 text-white" />
               </div>
-              <span className="text-xl font-bold text-white">TimeTrack Pro</span>
+              <span className="text-xl font-bold text-white">GeoTime QCMC</span>
             </div>
             <div className="bg-white rounded-2xl shadow-2xl p-8">
               <div className="text-center mb-8">
@@ -342,13 +428,6 @@ const AppLayout: React.FC = () => {
                   {loginLoading ? <><Loader2 className="w-5 h-5 animate-spin" />Signing in...</> : 'Sign In'}
                 </button>
               </form>
-              <div className="mt-6 pt-6 border-t border-slate-100">
-                <p className="text-center text-sm text-slate-500">Demo credentials:</p>
-                <div className="mt-2 bg-slate-50 rounded-lg p-3 text-sm">
-                  <p className="text-slate-600"><strong>Admin:</strong> admin@company.com / admin123</p>
-                  <p className="text-slate-600"><strong>Employee:</strong> john.doe@company.com / password123</p>
-                </div>
-              </div>
             </div>
           </div>
         </div>
@@ -360,7 +439,7 @@ const AppLayout: React.FC = () => {
   const StatusIcon = status.icon;
   const navItems = [
     { id: 'dashboard' as ViewType, label: 'Dashboard', icon: Home },
-    { id: 'scan' as ViewType, label: 'Scan', icon: QrCode },
+    { id: 'scan' as ViewType, label: 'In / Out', icon: LogIn },
     { id: 'history' as ViewType, label: 'History', icon: Clock },
     { id: 'profile' as ViewType, label: 'Profile', icon: User },
     ...(employee.role === 'admin' ? [{ id: 'admin' as ViewType, label: 'Admin', icon: Users }] : []),
@@ -377,7 +456,7 @@ const AppLayout: React.FC = () => {
               <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center">
                 <Clock className="w-6 h-6 text-white" />
               </div>
-              <span className="text-xl font-bold text-slate-800 hidden sm:block">TimeTrack Pro</span>
+              <span className="text-xl font-bold text-slate-800 hidden sm:block">GeoTime QCMC</span>
             </div>
             <div className="hidden md:flex items-center gap-1">
               {navItems.map(({ id, label, icon: Icon }) => (
@@ -450,11 +529,11 @@ const AppLayout: React.FC = () => {
               </div>
               <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-5">
                 <div className="flex items-center gap-3 mb-4">
-                  <div className="w-12 h-12 rounded-xl bg-green-100 flex items-center justify-center"><QrCode className="w-6 h-6 text-green-600" /></div>
-                  <div><p className="text-slate-500 text-sm">Quick Action</p><p className="font-semibold text-slate-800">Ready to scan</p></div>
+                  <div className="w-12 h-12 rounded-xl bg-green-100 flex items-center justify-center"><LogIn className="w-6 h-6 text-green-600" /></div>
+                  <div><p className="text-slate-500 text-sm">Quick Action</p><p className="font-semibold text-slate-800">Ready for In / Out</p></div>
                 </div>
                 <button onClick={() => setCurrentView('scan')} className="w-full bg-blue-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors flex items-center justify-center gap-2">
-                  Scan Now <ArrowRight className="w-4 h-4" />
+                  Go to In / Out <ArrowRight className="w-4 h-4" />
                 </button>
               </div>
             </div>
@@ -476,7 +555,7 @@ const AppLayout: React.FC = () => {
                   return (
                     <div key={checkin.id} className="px-6 py-4 flex items-center gap-4 hover:bg-slate-50">
                       <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${config.color}`}><Icon className="w-5 h-5" /></div>
-                      <div className="flex-1"><p className="font-medium text-slate-800">{config.label}</p><p className="text-sm text-slate-500">{checkin.location || 'Main Office'}</p></div>
+                      <div className="flex-1"><p className="font-medium text-slate-800">{config.label}</p></div>
                       <div className="text-right"><p className="font-medium text-slate-800">{formatTime(checkin.timestamp)}</p><p className="text-sm text-slate-500">{formatDate(checkin.timestamp)}</p></div>
                     </div>
                   );
@@ -495,23 +574,35 @@ const AppLayout: React.FC = () => {
               <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-5">
                 <div className="flex items-center gap-3">
                   <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center"><QrCode className="w-6 h-6 text-white" /></div>
-                  <div><h2 className="text-xl font-bold text-white">Quick Check-in</h2><p className="text-blue-100 text-sm">Select an action to check in/out</p></div>
+                  <div><h2 className="text-xl font-bold text-white">Quick Check-in</h2><p className="text-blue-100 text-sm">Tap to {nextCheckType === 'in' ? 'check in' : 'check out'}</p></div>
                 </div>
               </div>
               <div className="p-6">
-                <div className="grid grid-cols-2 gap-4">
-                  {[
-                    { type: 'in' as const, label: 'Check In', icon: LogIn, color: 'bg-green-500 hover:bg-green-600' },
-                    { type: 'out' as const, label: 'Check Out', icon: LogOut, color: 'bg-red-500 hover:bg-red-600' },
-                    { type: 'break_start' as const, label: 'Start Break', icon: Coffee, color: 'bg-amber-500 hover:bg-amber-600' },
-                    { type: 'break_end' as const, label: 'End Break', icon: Play, color: 'bg-blue-500 hover:bg-blue-600' },
-                  ].map(({ type, label, icon: Icon, color }) => (
-                    <button key={type} onClick={() => handleCheckin(type)} className={`flex flex-col items-center gap-3 p-6 rounded-xl text-white transition-all ${color}`}>
-                      <Icon className="w-10 h-10" /><span className="font-semibold text-lg">{label}</span>
-                    </button>
-                  ))}
-                </div>
-                <div className="mt-6 flex items-center gap-2 text-slate-500 text-sm"><MapPin className="w-4 h-4" /><span>Location: Main Office</span></div>
+                <button
+                  onClick={() => handleCheckin(nextCheckType)}
+                  disabled={!geoStatus.allowed || checkinLoading}
+                  className={`w-full flex flex-col items-center gap-3 p-8 rounded-xl text-white transition-all ${
+                    nextCheckType === 'in'
+                      ? 'bg-green-500 hover:bg-green-600'
+                      : 'bg-red-500 hover:bg-red-600'
+                  } ${!geoStatus.allowed || checkinLoading ? 'opacity-60 cursor-not-allowed' : ''}`}
+                >
+                  {checkinLoading ? (
+                    <Loader2 className="w-10 h-10 animate-spin" />
+                  ) : nextCheckType === 'in' ? (
+                    <LogIn className="w-10 h-10" />
+                  ) : (
+                    <LogOut className="w-10 h-10" />
+                  )}
+                  <span className="font-semibold text-lg">
+                    {checkinLoading ? 'Processing...' : nextCheckType === 'in' ? 'Check In' : 'Check Out'}
+                  </span>
+                </button>
+                <p className={`mt-4 text-sm ${geoStatus.allowed ? 'text-green-600' : 'text-red-600'}`}>
+                  {!geoStatus.initialized ? 'Checking location...' : geoStatus.message}
+                  {geoStatus.distanceMeters !== undefined ? ` (${geoStatus.distanceMeters.toFixed(1)}m)` : ''}
+                </p>
+                {/* <div className="mt-6 flex items-center gap-2 text-slate-500 text-sm"><MapPin className="w-4 h-4" /><span>Location: Main Office</span></div> */}
               </div>
             </div>
           </div>
@@ -524,26 +615,37 @@ const AppLayout: React.FC = () => {
               <h2 className="text-xl font-bold text-slate-800">Check-in History</h2>
               <p className="text-slate-500 text-sm mt-1">View your attendance records</p>
             </div>
-            <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden divide-y divide-slate-100">
-              {checkins.length > 0 ? checkins.map((checkin) => {
-                const typeConfig: Record<string, { icon: any; color: string; label: string }> = {
-                  in: { icon: LogIn, color: 'text-green-600 bg-green-100', label: 'Checked In' },
-                  out: { icon: LogOut, color: 'text-red-600 bg-red-100', label: 'Checked Out' },
-                  break_start: { icon: Coffee, color: 'text-amber-600 bg-amber-100', label: 'Started Break' },
-                  break_end: { icon: Clock, color: 'text-blue-600 bg-blue-100', label: 'Ended Break' },
-                };
-                const config = typeConfig[checkin.check_type] || typeConfig.in;
-                const Icon = config.icon;
-                return (
-                  <div key={checkin.id} className="px-6 py-4 flex items-center gap-4 hover:bg-slate-50">
-                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${config.color}`}><Icon className="w-5 h-5" /></div>
-                    <div className="flex-1"><p className="font-medium text-slate-800">{config.label}</p><p className="text-sm text-slate-500">{checkin.location || 'Main Office'}</p></div>
-                    <div className="text-right"><p className="font-medium text-slate-800">{formatTime(checkin.timestamp)}</p><p className="text-sm text-slate-500">{formatDate(checkin.timestamp)}</p></div>
-                  </div>
-                );
-              }) : (
-                <div className="px-6 py-12 text-center"><Clock className="w-12 h-12 text-slate-300 mx-auto mb-3" /><p className="text-slate-500">No history yet</p></div>
-              )}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+              <HistoryMap checkins={checkins} selectedId={selectedHistoryId} />
+              <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden divide-y divide-slate-100 lg:max-h-[28rem] lg:overflow-y-auto">
+                {checkins.length > 0 ? checkins.map((checkin) => {
+                  const typeConfig: Record<string, { icon: any; color: string; label: string }> = {
+                    in: { icon: LogIn, color: 'text-green-600 bg-green-100', label: 'Checked In' },
+                    out: { icon: LogOut, color: 'text-red-600 bg-red-100', label: 'Checked Out' },
+                    break_start: { icon: Coffee, color: 'text-amber-600 bg-amber-100', label: 'Started Break' },
+                    break_end: { icon: Clock, color: 'text-blue-600 bg-blue-100', label: 'Ended Break' },
+                  };
+                  const config = typeConfig[checkin.check_type] || typeConfig.in;
+                  const Icon = config.icon;
+                  const isSelected = checkin.id === selectedHistoryId;
+                  return (
+                    <button
+                      key={checkin.id}
+                      type="button"
+                      onClick={() => setSelectedHistoryId(checkin.id)}
+                      className={`w-full text-left px-6 py-4 flex items-center gap-4 hover:bg-slate-50 transition-colors ${
+                        isSelected ? 'bg-blue-50/60' : ''
+                      }`}
+                    >
+                      <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${config.color}`}><Icon className="w-5 h-5" /></div>
+                      <div className="flex-1"><p className="font-medium text-slate-800">{config.label}</p></div>
+                      <div className="text-right"><p className="font-medium text-slate-800">{formatTime(checkin.timestamp)}</p><p className="text-sm text-slate-500">{formatDate(checkin.timestamp)}</p></div>
+                    </button>
+                  );
+                }) : (
+                  <div className="px-6 py-12 text-center"><Clock className="w-12 h-12 text-slate-300 mx-auto mb-3" /><p className="text-slate-500">No history yet</p></div>
+                )}
+              </div>
             </div>
           </div>
         )}
@@ -567,8 +669,11 @@ const AppLayout: React.FC = () => {
                 </span>
               </div>
               <div className="px-6 pb-6 space-y-4">
-                <div className="flex items-center gap-3 p-4 bg-slate-50 rounded-xl"><Mail className="w-5 h-5 text-slate-400" /><span className="text-slate-700">{employee.email}</span></div>
-                <div className="flex items-center gap-3 p-4 bg-slate-50 rounded-xl"><Building2 className="w-5 h-5 text-slate-400" /><span className="text-slate-700">{employee.department}</span></div>
+                {[employee.company, employee.custom_location, employee.department, employee.designation].map((value, idx) => (
+                  <div key={idx} className="p-4 bg-slate-50 rounded-xl">
+                    <span className="text-slate-700">{value || '-'}</span>
+                  </div>
+                ))}
               </div>
             </div>
           </div>
@@ -598,9 +703,9 @@ const AppLayout: React.FC = () => {
           <div className="flex flex-col md:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 bg-gradient-to-br from-blue-400 to-blue-600 rounded-lg flex items-center justify-center"><Clock className="w-5 h-5 text-white" /></div>
-              <span className="font-bold">TimeTrack Pro</span>
+              <span className="font-bold">GeoTime QCMC</span>
             </div>
-            <p className="text-slate-400 text-sm">© 2026 TimeTrack Pro. All rights reserved.</p>
+            <p className="text-slate-400 text-sm">© 2026 GeoTime QCMC. All rights reserved.</p>
           </div>
         </div>
       </footer>

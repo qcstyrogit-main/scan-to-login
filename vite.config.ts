@@ -5,7 +5,7 @@ import path from "path";
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
-  const erpTarget = env.VITE_ERP_TARGET || "https://erp.qcstyro.com";
+  const erpTarget = env.VITE_ERP_TARGET ||"https://erp.qcstyro.com"; //"http://qc-styro.local:8000";// 
 
   return {
     server: {

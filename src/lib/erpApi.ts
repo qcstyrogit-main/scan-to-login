@@ -1,22 +1,30 @@
 import { Capacitor, CapacitorHttp } from "@capacitor/core";
 
-const DEFAULT_ERP_BASE_URL = "https://erp.qcstyro.com";
+const DEFAULT_ERP_BASE_URL = "https://erp.qcstyro.com"; // "http://qc-styro.local:8000"; //
+const ERP_SID_KEY = "erp_sid";
 
 const trimTrailingSlash = (value: string) => value.replace(/\/+$/, "");
 
 export const erpApiUrl = (endpoint: string) => {
   const normalizedEndpoint = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
 
-  if (import.meta.env.DEV) {
-    return `/erp${normalizedEndpoint}`;
-  }
-
   const configuredBase =
     import.meta.env.VITE_ERP_BASE_URL ||
     import.meta.env.VITE_ERP_TARGET ||
     DEFAULT_ERP_BASE_URL;
 
-  return `${trimTrailingSlash(configuredBase)}${normalizedEndpoint}`;
+  const useProxy =
+    import.meta.env.DEV || String(import.meta.env.VITE_ERP_USE_PROXY).toLowerCase() === "true";
+
+  const base = configuredBase?.trim() || "";
+  const isRelativeBase = base.startsWith("/");
+
+  if (useProxy || isRelativeBase) {
+    const proxyBase = trimTrailingSlash(base || "/erp");
+    return `${proxyBase}${normalizedEndpoint}`;
+  }
+
+  return `${trimTrailingSlash(base)}${normalizedEndpoint}`;
 };
 
 export const parseJsonResponse = async (response: Response): Promise<any> => {
@@ -48,6 +56,26 @@ type ErpRequestResult = {
   data: any;
 };
 
+export const getErpSid = () => {
+  try {
+    return localStorage.getItem(ERP_SID_KEY) || "";
+  } catch {
+    return "";
+  }
+};
+
+export const setErpSid = (sid?: string | null) => {
+  try {
+    if (sid && sid.trim()) {
+      localStorage.setItem(ERP_SID_KEY, sid.trim());
+      return;
+    }
+    localStorage.removeItem(ERP_SID_KEY);
+  } catch {
+    // Ignore storage errors on restricted contexts.
+  }
+};
+
 const parsePossibleJson = (value: any) => {
   if (typeof value !== "string") {
     return value;
@@ -76,10 +104,16 @@ export const erpRequest = async (
 
   if (isNative) {
     try {
+      const sid = getErpSid();
+      const nativeHeaders = { ...headers };
+      if (sid && !nativeHeaders.Cookie) {
+        nativeHeaders.Cookie = `sid=${sid}`;
+      }
+
       const nativeResponse = await CapacitorHttp.request({
         url,
         method,
-        headers,
+        headers: nativeHeaders,
         data: body,
       });
       return {

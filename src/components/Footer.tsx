@@ -12,7 +12,7 @@ const Footer: React.FC = () => {
               <div className="w-10 h-10 bg-gradient-to-br from-blue-400 to-blue-600 rounded-xl flex items-center justify-center">
                 <Clock className="w-6 h-6 text-white" />
               </div>
-              <span className="text-xl font-bold">TimeTrack Pro</span>
+              <span className="text-xl font-bold">GeoTime QCMC</span>
             </div>
             <p className="text-slate-400 mb-6 max-w-md">
               Streamline your workforce management with our modern employee check-in system. 
@@ -79,7 +79,7 @@ const Footer: React.FC = () => {
 
         <div className="border-t border-slate-800 mt-10 pt-8 flex flex-col md:flex-row items-center justify-between gap-4">
           <p className="text-slate-400 text-sm">
-            © 2026 TimeTrack Pro. All rights reserved.
+            © 2026 GeoTime QCMC. All rights reserved.
           </p>
           <div className="flex gap-6">
             <a href="#" className="text-slate-400 hover:text-white text-sm transition-colors">Privacy</a>

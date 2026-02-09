@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Employee, Checkin } from '@/types';
 import { Clock, Shield, Users, Zap, Eye, EyeOff, Loader2 } from 'lucide-react';
-import { erpRequest, extractErrorMessage } from '@/lib/erpApi';
+import { erpRequest, extractErrorMessage, setErpSid } from '@/lib/erpApi';
 
 interface LoginPageProps {
   onLogin: (employee: Employee, latestCheckin?: Checkin) => void;
@@ -16,18 +16,28 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const buildEmployeeFromErp = (user: any, loginEmail: string): Employee => {
-    const userId = typeof user === 'string' ? user : (user?.name || user?.user || user?.email || loginEmail);
-    const userEmail = user?.email || (typeof user === 'string' && user.includes('@') ? user : loginEmail);
+  const buildEmployeeFromErp = (user: any, loginEmail: string, context: any = {}): Employee => {
+    const userObj = typeof user === 'object' && user ? user : {};
+    const source = { ...context, ...userObj };
+    const fallbackId = typeof user === 'string' ? user : undefined;
+    const fallbackEmail = typeof user === 'string' && user.includes('@') ? user : undefined;
+    const userId = source?.name || source?.user || source?.email || fallbackId || loginEmail;
+    const userEmail = source?.email || fallbackEmail || loginEmail;
     const baseName = typeof user === 'string' ? user.split('@')[0] : undefined;
-    const fullName = user?.full_name || user?.fullName || baseName || loginEmail.split('@')[0] || 'Employee';
-    const department = user?.department || user?.dept || 'General';
-    const isAdmin = userId === 'Administrator' || user?.user_type === 'System User';
+    const fullName = source?.full_name || source?.fullName || baseName || loginEmail.split('@')[0] || 'Employee';
+    const department = source?.department || source?.dept || 'General';
+    const company = source?.company || '-';
+    const customLocation = source?.custom_location || '-';
+    const designation = source?.designation || '-';
+    const isAdmin = userId === 'Administrator' || source?.user_type === 'System User';
     return {
       id: userId,
       email: userEmail,
       full_name: fullName,
       department,
+      company,
+      custom_location: customLocation,
+      designation,
       role: isAdmin ? 'admin' : 'employee',
     };
   };
@@ -47,9 +57,10 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
     if (!payload?.success) {
       throw new Error(extractErrorMessage(payload, 'Invalid credentials or empty ERP response'));
     }
+    setErpSid(payload?.sid || loginData?.sid || '');
 
-    const userSource = payload?.user || loginEmail;
-    const emp = buildEmployeeFromErp(userSource, loginEmail);
+    const userSource = payload?.user || loginData?.user || loginEmail;
+    const emp = buildEmployeeFromErp(userSource, loginEmail, { ...loginData, ...payload });
     const fullName = loginData?.full_name || payload?.full_name;
     if (fullName) {
       emp.full_name = fullName;
@@ -100,7 +111,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
             <div className="w-12 h-12 bg-gradient-to-br from-blue-400 to-blue-600 rounded-xl flex items-center justify-center">
               <Clock className="w-7 h-7 text-white" />
             </div>
-            <span className="text-2xl font-bold text-white">TimeTrack Pro</span>
+            <span className="text-2xl font-bold text-white">GeoTime QCMC</span>
           </div>
           
           <h1 className="text-4xl xl:text-5xl font-bold text-white mb-6 leading-tight">
@@ -147,7 +158,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
             <div className="w-10 h-10 bg-gradient-to-br from-blue-400 to-blue-600 rounded-xl flex items-center justify-center">
               <Clock className="w-6 h-6 text-white" />
             </div>
-            <span className="text-xl font-bold text-white">TimeTrack Pro</span>
+            <span className="text-xl font-bold text-white">GeoTime QCMC</span>
           </div>
 
           <div className="bg-white rounded-2xl shadow-2xl p-8">
@@ -243,7 +254,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
           </div>
 
           <p className="text-center text-slate-400 text-sm mt-6">
-            © 2026 TimeTrack Pro. All rights reserved.
+            © 2026 GeoTime QCMC. All rights reserved.
           </p>
         </div>
       </div>
