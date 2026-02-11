@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Login Scan Checkin Foreground">
+  <defs>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#22c55e" />
+      <stop offset="100%" stop-color="#14b8a6" />
+    </linearGradient>
+  </defs>
+
+  <!-- Framing corners hint at scanning -->
+  <path d="M120 170V128h42" fill="none" stroke="#e2e8f0" stroke-width="20" stroke-linecap="round" />
+  <path d="M392 170V128h-42" fill="none" stroke="#e2e8f0" stroke-width="20" stroke-linecap="round" />
+  <path d="M120 342v42h42" fill="none" stroke="#e2e8f0" stroke-width="20" stroke-linecap="round" />
+  <path d="M392 342v42h-42" fill="none" stroke="#e2e8f0" stroke-width="20" stroke-linecap="round" />
+
+  <!-- Badge outline -->
+  <rect x="128" y="164" width="256" height="224" rx="48" fill="none" stroke="#cbd5e1" stroke-width="10" />
+  <rect x="156" y="190" width="200" height="172" rx="36" fill="none" stroke="#94a3b8" stroke-width="8" />
+
+  <!-- Checkmark -->
+  <path d="M206 280l38 38 86-86" fill="none" stroke="url(#accent)" stroke-width="26" stroke-linecap="round" stroke-linejoin="round" />
+
+  <!-- Status dot -->
+  <circle cx="356" cy="208" r="12" fill="#22c55e" />
+</svg>
