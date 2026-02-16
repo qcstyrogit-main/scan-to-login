@@ -1,14 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { Capacitor } from '@capacitor/core';
-import { Clock, LogIn, LogOut, Coffee, Play, Camera, QrCode, Check, X, Loader2, Home, User, Users, Menu, MapPin, Calendar, Timer, ArrowRight, Filter, Download, Search, RefreshCw, Building2, Mail, Phone, Shield, Eye, EyeOff, Zap } from 'lucide-react';
+import { Clock, LogIn, LogOut, Coffee, Play, Camera, QrCode, Check, X, Loader2, Home, User, Users, Menu, MapPin, Calendar, Timer, ArrowRight, Filter, Download, Search, RefreshCw, Building2, Mail, Phone, Shield, Eye, EyeOff, Zap, Truck, History } from 'lucide-react';
 import { erpRequest, extractErrorMessage, setErpSid } from '@/lib/erpApi';
 import { toast } from '@/components/ui/sonner';
 import { getCurrentLocation } from '@/lib/location';
 import type { Checkin } from '@/types';
 import HistoryMap from '@/components/HistoryMap';
+import DeliveryPage from '@/components/DeliveryPage';
+import DeliveryHistoryPage from '@/components/DeliveryHistoryPage';
 
 interface Employee {
   id: string;
+  employee_id?: string;
   email: string;
   full_name: string;
   department: string;
@@ -21,7 +24,7 @@ interface Employee {
   latestCheckin?: Checkin;
 }
 
-type ViewType = 'dashboard' | 'scan' | 'history' | 'profile' | 'admin';
+type ViewType = 'dashboard' | 'scan' | 'history' | 'profile' | 'admin' | 'delivery' | 'delivery_history';
 
 const AppLayout: React.FC = () => {
   const GEOFENCE_CHECK_INTERVAL_MS = 5000;
@@ -58,6 +61,7 @@ const AppLayout: React.FC = () => {
     const fallbackEmail = typeof user === 'string' && user.includes('@') ? user : undefined;
     const userId = source?.name || source?.user || source?.email || fallbackId || loginEmail;
     const userEmail = source?.email || fallbackEmail || loginEmail;
+    const employeeId = source?.employee || source?.employee_id || source?.employeeId;
     const baseName = typeof user === 'string' ? user.split('@')[0] : undefined;
     const fullName = source?.full_name || source?.fullName || baseName || loginEmail.split('@')[0] || 'Employee';
     const department = source?.department || source?.dept || 'General';
@@ -67,6 +71,7 @@ const AppLayout: React.FC = () => {
     const isAdmin = userId === 'Administrator' || source?.user_type === 'System User';
     return {
       id: userId,
+      employee_id: employeeId,
       email: userEmail,
       full_name: fullName,
       department,
@@ -248,6 +253,23 @@ const AppLayout: React.FC = () => {
     const interval = setInterval(refreshGeofenceStatus, GEOFENCE_CHECK_INTERVAL_MS);
     return () => clearInterval(interval);
   }, [employee, currentView]);
+
+  const normalizedDesignation = employee?.designation?.trim().toLowerCase() || '';
+  const isDeliveryDriver = normalizedDesignation === 'delivery driver';
+
+  useEffect(() => {
+    if (!employee) return;
+    if (isDeliveryDriver) {
+      const allowedDeliveryViews: ViewType[] = ['delivery', 'delivery_history', 'profile'];
+      if (!allowedDeliveryViews.includes(currentView)) {
+        setCurrentView('delivery');
+      }
+      return;
+    }
+    if (!isDeliveryDriver && currentView === 'delivery') {
+      setCurrentView('dashboard');
+    }
+  }, [employee, currentView, isDeliveryDriver]);
 
   const handleCheckin = async (checkType: 'in' | 'out' | 'break_start' | 'break_end') => {
     if (!employee) return;
@@ -438,10 +460,20 @@ const AppLayout: React.FC = () => {
   const status = getStatus();
   const StatusIcon = status.icon;
   const navItems = [
-    { id: 'dashboard' as ViewType, label: 'Dashboard', icon: Home },
-    { id: 'scan' as ViewType, label: 'In / Out', icon: LogIn },
-    { id: 'history' as ViewType, label: 'History', icon: Clock },
+    ...(!isDeliveryDriver
+      ? [
+          { id: 'dashboard' as ViewType, label: 'Dashboard', icon: Home },
+          { id: 'scan' as ViewType, label: 'In / Out', icon: LogIn },
+          { id: 'history' as ViewType, label: 'History', icon: Clock },
+        ]
+      : []),
     { id: 'profile' as ViewType, label: 'Profile', icon: User },
+    ...(isDeliveryDriver
+      ? [
+          { id: 'delivery' as ViewType, label: 'Delivery', icon: Truck },
+          { id: 'delivery_history' as ViewType, label: 'History', icon: History },
+        ]
+      : []),
     ...(employee.role === 'admin' ? [{ id: 'admin' as ViewType, label: 'Admin', icon: Users }] : []),
   ];
 
@@ -648,6 +680,26 @@ const AppLayout: React.FC = () => {
               </div>
             </div>
           </div>
+        )}
+
+        {/* Delivery View */}
+        {currentView === 'delivery' && isDeliveryDriver && (
+          <DeliveryPage
+            fullName={employee.full_name}
+            department={employee.department}
+            designation={employee.designation}
+            company={employee.company}
+            customLocation={employee.custom_location}
+            employeeId={employee.employee_id || employee.id}
+          />
+        )}
+
+        {/* Delivery History View */}
+        {currentView === 'delivery_history' && isDeliveryDriver && (
+          <DeliveryHistoryPage
+            employeeId={employee.employee_id || employee.id}
+            driverId={employee.id}
+          />
         )}
 
         {/* Profile View */}
