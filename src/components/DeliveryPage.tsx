@@ -37,6 +37,7 @@ type DeliveryStop = {
   estimated_arrival?: string;
   latitude?: number;
   longitude?: number;
+  geofence_radius_meters?: number;
   uom?: string;
 };
 
@@ -53,6 +54,8 @@ type DeliveryTrip = {
   vehicle?: string;
   departure_time?: string;
   employee?: string;
+  latitude?: number;
+  longitude?: number;
 };
 
 const getVisitLabel = (visited?: number | boolean) => {
@@ -66,6 +69,23 @@ const normalizeAddress = (value?: string) => {
   const noBreaks = value.replace(/<br\s*\/?>/gi, ', ');
   const collapsed = noBreaks.replace(/\s*,\s*/g, ', ').replace(/,\s*,+/g, ', ').trim();
   return collapsed.replace(/,\s*$/, '');
+};
+
+const DEFAULT_GEOFENCE_RADIUS_METERS = 150;
+
+const isFiniteNumber = (value?: number) => Number.isFinite(value);
+
+const toRadians = (value: number) => (value * Math.PI) / 180;
+
+const getDistanceMeters = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+  const earthRadiusMeters = 6371000;
+  const dLat = toRadians(lat2 - lat1);
+  const dLon = toRadians(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRadians(lat1)) * Math.cos(toRadians(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return earthRadiusMeters * c;
 };
 
 const DeliveryPage: React.FC<DeliveryPageProps> = ({
@@ -233,7 +253,6 @@ const DeliveryPage: React.FC<DeliveryPageProps> = ({
     if (remainingStops.length === 0) return '';
 
     const origin =
-      formatPoint(trip?.latitude, trip?.longitude) ||
       normalizeAddress(trip?.custom_location) ||
       normalizeAddress(customLocation) ||
       formatPoint(remainingStops[0]?.latitude, remainingStops[0]?.longitude) ||
@@ -290,20 +309,58 @@ const DeliveryPage: React.FC<DeliveryPageProps> = ({
     setIsUnloadingOpen(true);
   };
 
+  const hasStopCoordinates = (stop?: DeliveryStop | null) =>
+    isFiniteNumber(stop?.latitude) && isFiniteNumber(stop?.longitude);
+
+  const getStopRadiusMeters = (stop?: DeliveryStop | null) => {
+    if (isFiniteNumber(stop?.geofence_radius_meters)) {
+      return Number(stop?.geofence_radius_meters);
+    }
+    return DEFAULT_GEOFENCE_RADIUS_METERS;
+  };
 
   const handleUnloadingSubmit = async () => {
     if (!selectedStop || !trip) return;
+    if (!hasStopCoordinates(selectedStop)) {
+      toast.error('Delivery coordinates are missing. Unable to verify location.');
+      return;
+    }
     const currentStatus = getStopStatus(selectedStop);
     const nextStatus = currentStatus === 'Unloading' ? 'Completed' : 'Unloading';
     setIsUnloadingSubmitting(true);
     try {
+      let currentLocation: { latitude: number; longitude: number } | null = null;
+      try {
+        currentLocation = await getCurrentLocation('checkin');
+      } catch {
+        currentLocation = null;
+      }
+      if (!currentLocation) {
+        toast.error('Unable to get your current location. Please enable GPS and try again.');
+        return;
+      }
+
+      const distance = getDistanceMeters(
+        currentLocation.latitude,
+        currentLocation.longitude,
+        selectedStop.latitude!,
+        selectedStop.longitude!
+      );
+
+      const allowedRadius = getStopRadiusMeters(selectedStop);
+      if (distance > allowedRadius) {
+        toast.error(
+          `You are too far from the delivery location (~${Math.round(distance)}m, allowed ${Math.round(allowedRadius)}m).`
+        );
+        return;
+      }
+
       let latitude = selectedStop.latitude;
       let longitude = selectedStop.longitude;
       let address = normalizeAddress(selectedStop.customer_address || selectedStop.address);
       try {
-        const current = await getCurrentLocation('checkin');
-        latitude = current.latitude;
-        longitude = current.longitude;
+        latitude = currentLocation.latitude;
+        longitude = currentLocation.longitude;
         const reverseAddress = await getAddressFromCoordinates(latitude, longitude);
         if (reverseAddress) {
           address = reverseAddress;
@@ -561,7 +618,11 @@ const DeliveryPage: React.FC<DeliveryPageProps> = ({
             </Button>
             <Button
               onClick={handleUnloadingSubmit}
-              disabled={isUnloadingSubmitting || getStopStatus(selectedStop) === 'Completed'}
+              disabled={
+                isUnloadingSubmitting ||
+                getStopStatus(selectedStop) === 'Completed' ||
+                !hasStopCoordinates(selectedStop)
+              }
             >
               {isUnloadingSubmitting
                 ? 'Saving...'

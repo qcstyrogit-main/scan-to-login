@@ -1,5 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { Capacitor } from '@capacitor/core';
+import {
+  AndroidBiometryStrength,
+  BiometricAuth,
+  BiometryError,
+  BiometryErrorType,
+} from '@aparajita/capacitor-biometric-auth';
 import { Clock, LogIn, LogOut, Coffee, Play, Camera, QrCode, Check, X, Loader2, Home, User, Users, Menu, MapPin, Calendar, Timer, ArrowRight, Filter, Download, Search, RefreshCw, Building2, Mail, Phone, Shield, Eye, EyeOff, Zap, Truck, History } from 'lucide-react';
 import { erpRequest, extractErrorMessage, setErpSid } from '@/lib/erpApi';
 import { toast } from '@/components/ui/sonner';
@@ -273,11 +279,43 @@ const AppLayout: React.FC = () => {
 
   const handleCheckin = async (checkType: 'in' | 'out' | 'break_start' | 'break_end') => {
     if (!employee) return;
-    setCheckinLoading(true);
     try {
       if (!geoStatus.allowed) {
         throw new Error(geoStatus.message || 'Check in/out is allowed only inside your branch radius');
       }
+
+      setCheckinLoading(true);
+
+      const requireBiometric = Capacitor.getPlatform() === 'android';
+      if (requireBiometric && Capacitor.isNativePlatform()) {
+        const info = await BiometricAuth.checkBiometry();
+        if (!info.isAvailable) {
+          const message = info.reason || 'Biometric authentication is not available on this device.';
+          toast.error(message);
+          return;
+        }
+        try {
+          await BiometricAuth.authenticate({
+            reason: 'Authenticate to check in/out',
+            cancelTitle: 'Cancel',
+            allowDeviceCredential: false,
+            androidTitle: 'Check-in Verification',
+            androidSubtitle: 'Use face or fingerprint to continue',
+            androidConfirmationRequired: false,
+            androidBiometryStrength: AndroidBiometryStrength.weak,
+          });
+        } catch (error) {
+          if (error instanceof BiometryError) {
+            if (error.code !== BiometryErrorType.userCancel) {
+              toast.error(error.message || 'Biometric authentication failed.');
+            }
+          } else {
+            toast.error('Biometric authentication failed.');
+          }
+          return;
+        }
+      }
+
       const { latitude, longitude } = await getCurrentLocation('checkin');
       const platform = Capacitor.getPlatform();
       const rawUa = typeof navigator !== 'undefined' ? navigator.userAgent : 'unknown';
@@ -633,6 +671,9 @@ const AppLayout: React.FC = () => {
                 <p className={`mt-4 text-sm ${geoStatus.allowed ? 'text-green-600' : 'text-red-600'}`}>
                   {!geoStatus.initialized ? 'Checking location...' : geoStatus.message}
                   {geoStatus.distanceMeters !== undefined ? ` (${geoStatus.distanceMeters.toFixed(1)}m)` : ''}
+                </p>
+                <p className="mt-2 text-xs text-slate-500">
+                  Biometric authentication is required on Android for check in/out.
                 </p>
                 {/* <div className="mt-6 flex items-center gap-2 text-slate-500 text-sm"><MapPin className="w-4 h-4" /><span>Location: Main Office</span></div> */}
               </div>

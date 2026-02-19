@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+﻿import React, { useEffect, useState } from 'react';
 import { CheckCircle, Package } from 'lucide-react';
 import { erpRequest, extractErrorMessage } from '@/lib/erpApi';
 
@@ -6,6 +6,9 @@ type DeliveryLog = {
   name: string;
   delivery_trip?: string;
   date_and_time?: string;
+  unloading_time?: string;
+  completed_time?: string;
+  total_time_of_completion?: string;
   status?: string;
   driver?: string;
   vehicle?: string;
@@ -246,12 +249,19 @@ const DeliveryHistoryPage: React.FC<DeliveryHistoryPageProps> = ({ employeeId, d
                   <p className="font-medium text-slate-800">{log.customer || 'Customer'}</p>
                   <p className="text-sm text-slate-500">{log.address || '--'}</p>
                   <p className="text-xs text-slate-400 mt-1">
-                    Trip: {log.delivery_trip || '--'} · Vehicle: {log.vehicle || '--'}
+                    Trip: {log.delivery_trip || '--'} Â· Vehicle: {log.vehicle || '--'}
                   </p>
+                  {log.total_time_of_completion && (
+                    <p className="text-xs text-slate-400 mt-1">
+                      Duration: {log.total_time_of_completion}
+                    </p>
+                  )}
                 </div>
                 <div className="text-right">
                   <p className="text-sm font-semibold text-green-700">Completed</p>
-                  <p className="text-xs text-slate-400">{formatDateTime(log.date_and_time)}</p>
+                  <p className="text-xs text-slate-400">
+                    {formatDateTime(log.completed_time || log.unloading_time || log.date_and_time)}
+                  </p>
                 </div>
               </div>
             ))}
@@ -267,7 +277,7 @@ const DeliveryHistoryPage: React.FC<DeliveryHistoryPageProps> = ({ employeeId, d
                   <p className="font-medium text-slate-800">{trip.name}</p>
                   <p className="text-sm text-slate-500">{trip.company || '--'}</p>
                   <p className="text-xs text-slate-400 mt-1">
-                    Vehicle: {trip.vehicle || '--'} · Driver: {trip.driver_name || trip.driver || '--'}
+                    Vehicle: {trip.vehicle || '--'} Â· Driver: {trip.driver_name || trip.driver || '--'}
                   </p>
                 </div>
                 <div className="text-right">
@@ -286,3 +296,4 @@ const DeliveryHistoryPage: React.FC<DeliveryHistoryPageProps> = ({ employeeId, d
 };
 
 export default DeliveryHistoryPage;
+
