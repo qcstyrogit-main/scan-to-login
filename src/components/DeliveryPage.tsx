@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { ClipboardCheck, MapPin, Package, Route, Truck } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Camera, MapPin, Package, Route, Truck } from 'lucide-react';
 import { erpRequest, extractErrorMessage } from '@/lib/erpApi';
 import { getAddressFromCoordinates, getCurrentLocation } from '@/lib/location';
 import DeliveryRouteMap from '@/components/DeliveryRouteMap';
@@ -71,6 +71,11 @@ const normalizeAddress = (value?: string) => {
   return collapsed.replace(/,\s*$/, '');
 };
 
+const truncateText = (value: string, maxLength: number) => {
+  if (!value || value.length <= maxLength) return value;
+  return `${value.slice(0, Math.max(0, maxLength - 3))}...`;
+};
+
 const DEFAULT_GEOFENCE_RADIUS_METERS = 150;
 
 const isFiniteNumber = (value?: number) => Number.isFinite(value);
@@ -105,6 +110,15 @@ const DeliveryPage: React.FC<DeliveryPageProps> = ({
   const [isUnloadingOpen, setIsUnloadingOpen] = useState(false);
   const [isUnloadingSubmitting, setIsUnloadingSubmitting] = useState(false);
   const [statusByStop, setStatusByStop] = useState<Map<string, string>>(new Map());
+  const [proofImage, setProofImage] = useState<string | null>(null);
+  const [proofFilename, setProofFilename] = useState<string | null>(null);
+  const [radiusCheck, setRadiusCheck] = useState<{
+    checking: boolean;
+    allowed: boolean;
+    distance?: number;
+    message?: string;
+  }>({ checking: false, allowed: false });
+  const proofInputRef = useRef<HTMLInputElement>(null);
 
   const stopKey = (stop?: DeliveryStop | null) =>
     stop?.name || `${stop?.customer || ''}||${normalizeAddress(stop?.customer_address || stop?.address || '')}`;
@@ -307,6 +321,8 @@ const DeliveryPage: React.FC<DeliveryPageProps> = ({
   const openUnloadingModal = (stop: DeliveryStop) => {
     setSelectedStop(stop);
     setIsUnloadingOpen(true);
+    setProofImage(null);
+    setProofFilename(null);
   };
 
   const hasStopCoordinates = (stop?: DeliveryStop | null) =>
@@ -319,55 +335,59 @@ const DeliveryPage: React.FC<DeliveryPageProps> = ({
     return DEFAULT_GEOFENCE_RADIUS_METERS;
   };
 
-  const handleUnloadingSubmit = async () => {
-    if (!selectedStop || !trip) return;
-    if (!hasStopCoordinates(selectedStop)) {
+  const resolveLocationForStop = async (stop: DeliveryStop) => {
+    if (!hasStopCoordinates(stop)) {
       toast.error('Delivery coordinates are missing. Unable to verify location.');
-      return;
+      throw new Error('Delivery coordinates are missing.');
     }
-    const currentStatus = getStopStatus(selectedStop);
-    const nextStatus = currentStatus === 'Unloading' ? 'Completed' : 'Unloading';
+    let currentLocation: { latitude: number; longitude: number } | null = null;
+    try {
+      currentLocation = await getCurrentLocation('checkin');
+    } catch {
+      currentLocation = null;
+    }
+    if (!currentLocation) {
+      toast.error('Unable to get your current location. Please enable GPS and try again.');
+      throw new Error('Missing location.');
+    }
+
+    const distance = getDistanceMeters(
+      currentLocation.latitude,
+      currentLocation.longitude,
+      stop.latitude!,
+      stop.longitude!
+    );
+
+    const allowedRadius = getStopRadiusMeters(stop);
+    if (distance > allowedRadius) {
+      toast.error(
+        `You are too far from the delivery location (~${Math.round(distance)}m, allowed ${Math.round(allowedRadius)}m).`
+      );
+      throw new Error('Outside allowed radius.');
+    }
+
+    let latitude = stop.latitude;
+    let longitude = stop.longitude;
+    let address = normalizeAddress(stop.customer_address || stop.address);
+    try {
+      latitude = currentLocation.latitude;
+      longitude = currentLocation.longitude;
+      const reverseAddress = await getAddressFromCoordinates(latitude, longitude);
+      if (reverseAddress) {
+        address = reverseAddress;
+      }
+    } catch {
+      // Fallback to stop coordinates if device location is unavailable.
+    }
+
+    return { latitude, longitude, address };
+  };
+
+  const handleStartUnloading = async () => {
+    if (!selectedStop || !trip) return;
     setIsUnloadingSubmitting(true);
     try {
-      let currentLocation: { latitude: number; longitude: number } | null = null;
-      try {
-        currentLocation = await getCurrentLocation('checkin');
-      } catch {
-        currentLocation = null;
-      }
-      if (!currentLocation) {
-        toast.error('Unable to get your current location. Please enable GPS and try again.');
-        return;
-      }
-
-      const distance = getDistanceMeters(
-        currentLocation.latitude,
-        currentLocation.longitude,
-        selectedStop.latitude!,
-        selectedStop.longitude!
-      );
-
-      const allowedRadius = getStopRadiusMeters(selectedStop);
-      if (distance > allowedRadius) {
-        toast.error(
-          `You are too far from the delivery location (~${Math.round(distance)}m, allowed ${Math.round(allowedRadius)}m).`
-        );
-        return;
-      }
-
-      let latitude = selectedStop.latitude;
-      let longitude = selectedStop.longitude;
-      let address = normalizeAddress(selectedStop.customer_address || selectedStop.address);
-      try {
-        latitude = currentLocation.latitude;
-        longitude = currentLocation.longitude;
-        const reverseAddress = await getAddressFromCoordinates(latitude, longitude);
-        if (reverseAddress) {
-          address = reverseAddress;
-        }
-      } catch {
-        // Fallback to stop coordinates if device location is unavailable.
-      }
+      const { latitude, longitude, address } = await resolveLocationForStop(selectedStop);
 
       const res = await erpRequest(
         '/api/method/route_optimizer.api.delivery_monitoring.create_delivery_monitoring',
@@ -377,7 +397,7 @@ const DeliveryPage: React.FC<DeliveryPageProps> = ({
           body: {
             delivery_trip: trip.name,
             delivery_stop: selectedStop.name,
-            status: nextStatus,
+            status: 'Unloading',
             driver: trip.driver,
             vehicle: trip.vehicle,
             customer: selectedStop.customer,
@@ -394,10 +414,9 @@ const DeliveryPage: React.FC<DeliveryPageProps> = ({
       }
 
       const updated = new Map(statusByStop);
-      updated.set(stopKey(selectedStop), nextStatus);
+      updated.set(stopKey(selectedStop), 'Unloading');
       setStatusByStop(updated);
-      toast.success('Delivery log saved.');
-      setIsUnloadingOpen(false);
+      toast.success('Delivery marked as unloading.');
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unable to save delivery log';
       toast.error(msg);
@@ -405,6 +424,119 @@ const DeliveryPage: React.FC<DeliveryPageProps> = ({
       setIsUnloadingSubmitting(false);
     }
   };
+
+  const handleProofCapture = () => {
+    proofInputRef.current?.click();
+  };
+
+  const handleProofChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setProofFilename(file.name);
+    const reader = new FileReader();
+    reader.onload = () => {
+      setProofImage(typeof reader.result === 'string' ? reader.result : null);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleCompleteWithProof = async () => {
+    if (!selectedStop || !trip) return;
+    if (!proofImage) {
+      handleProofCapture();
+      return;
+    }
+    setIsUnloadingSubmitting(true);
+    try {
+      const { latitude, longitude, address } = await resolveLocationForStop(selectedStop);
+      const res = await erpRequest(
+        '/api/method/route_optimizer.api.delivery_monitoring.complete_delivery_with_proof',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: {
+            delivery_trip: trip.name,
+            delivery_stop: selectedStop.name,
+            status: 'Completed',
+            driver: trip.driver,
+            vehicle: trip.vehicle,
+            customer: selectedStop.customer,
+            address,
+            latitude,
+            longitude,
+            proof_image: proofImage,
+            proof_filename: proofFilename,
+          },
+        }
+      );
+
+      const payload = res.data?.message ?? res.data;
+      if (!res.ok || payload?.success === false) {
+        throw new Error(extractErrorMessage(payload, 'Unable to complete delivery'));
+      }
+
+      const updated = new Map(statusByStop);
+      updated.set(stopKey(selectedStop), 'Completed');
+      setStatusByStop(updated);
+      toast.success('Delivery completed and proof sent.');
+      setIsUnloadingOpen(false);
+      setProofImage(null);
+      setProofFilename(null);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unable to complete delivery';
+      toast.error(msg);
+    } finally {
+      setIsUnloadingSubmitting(false);
+    }
+  };
+
+  useEffect(() => {
+    let alive = true;
+    const checkRadius = async () => {
+      if (!isUnloadingOpen || !selectedStop) return;
+      if (!hasStopCoordinates(selectedStop)) {
+        setRadiusCheck({
+          checking: false,
+          allowed: false,
+          message: 'Delivery coordinates are missing.',
+        });
+        return;
+      }
+      setRadiusCheck({ checking: true, allowed: false });
+      try {
+        const currentLocation = await getCurrentLocation('checkin');
+        const distance = getDistanceMeters(
+          currentLocation.latitude,
+          currentLocation.longitude,
+          selectedStop.latitude!,
+          selectedStop.longitude!
+        );
+        const allowedRadius = getStopRadiusMeters(selectedStop);
+        const allowed = distance <= allowedRadius;
+        if (!alive) return;
+        setRadiusCheck({
+          checking: false,
+          allowed,
+          distance,
+          message: allowed
+            ? 'Inside allowed area.'
+            : `Too far (~${Math.round(distance)}m, allowed ${Math.round(allowedRadius)}m).`,
+        });
+      } catch {
+        if (!alive) return;
+        setRadiusCheck({
+          checking: false,
+          allowed: false,
+          message: 'Unable to get your current location.',
+        });
+      }
+    };
+
+    checkRadius();
+    return () => {
+      alive = false;
+    };
+  }, [isUnloadingOpen, selectedStop]);
 
   const isTripCompleted =
     (trip?.status && trip.status.toLowerCase() === 'completed') ||
@@ -541,7 +673,9 @@ const DeliveryPage: React.FC<DeliveryPageProps> = ({
                   <p className="font-medium text-slate-800">{stop.customer || stop.address || 'Delivery Stop'}</p>
                   <p className="text-sm text-slate-500">{stop.address || '--'}</p>
                   {stop.customer_address && (
-                    <p className="text-xs text-slate-400">{normalizeAddress(stop.customer_address)}</p>
+                    <p className="text-xs text-slate-400">
+                      {truncateText(normalizeAddress(stop.customer_address), 90)}
+                    </p>
                   )}
                 </div>
                 <div className="text-right">
@@ -550,30 +684,12 @@ const DeliveryPage: React.FC<DeliveryPageProps> = ({
                   >
                     {getStatusBadge(stop).label}
                   </span>
-                  <p className="text-xs text-slate-400">ETA {stop.estimated_arrival || '--'}</p>
+                  <p className="text-xs text-slate-400 mt-1">ETA {stop.estimated_arrival || '--'}</p>
                 </div>
               </button>
             ))}
           </div>
         )}
-      </div>
-
-      <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-xl bg-emerald-100 flex items-center justify-center">
-            <ClipboardCheck className="w-6 h-6 text-emerald-600" />
-          </div>
-          <div>
-            <h2 className="text-lg font-semibold text-slate-800">Proof of Delivery</h2>
-            <p className="text-sm text-slate-500">Capture signature or photo after delivery.</p>
-          </div>
-        </div>
-        <button
-          type="button"
-          className="bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-emerald-700 transition-colors"
-        >
-          Collect POD
-        </button>
       </div>
 
       {showRoute && showData && (
@@ -611,23 +727,78 @@ const DeliveryPage: React.FC<DeliveryPageProps> = ({
               Status:{' '}
               {getStopStatus(selectedStop) || getVisitLabel(selectedStop?.visited)}
             </p>
+            <p className={`text-xs ${radiusCheck.allowed ? 'text-green-600' : 'text-red-600'}`}>
+              {radiusCheck.checking
+                ? 'Checking distance...'
+                : radiusCheck.message || 'Location check required.'}
+            </p>
+            {getStopStatus(selectedStop) === 'Unloading' && (
+              <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="font-medium text-slate-700">Delivery proof</p>
+                    <p className="text-xs text-slate-500">Capture a photo before completing.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleProofCapture}
+                    className="inline-flex items-center gap-2 rounded-lg bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 hover:bg-slate-100"
+                  >
+                    <Camera className="h-4 w-4" />
+                    {proofImage ? 'Retake' : 'Open Camera'}
+                  </button>
+                </div>
+                <input
+                  ref={proofInputRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  className="hidden"
+                  onChange={handleProofChange}
+                />
+                {proofImage && (
+                  <div className="mt-3">
+                    <img
+                      src={proofImage}
+                      alt="Delivery proof"
+                      className="h-40 w-full rounded-lg object-cover"
+                    />
+                    {proofFilename && (
+                      <p className="mt-2 text-xs text-slate-500">{proofFilename}</p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsUnloadingOpen(false)}>
+          <DialogFooter className="flex flex-col gap-3 sm:flex-row sm:gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setIsUnloadingOpen(false)}
+              className="w-full sm:w-auto"
+            >
               Cancel
             </Button>
             <Button
-              onClick={handleUnloadingSubmit}
+              onClick={
+                getStopStatus(selectedStop) === 'Unloading'
+                  ? handleCompleteWithProof
+                  : handleStartUnloading
+              }
               disabled={
                 isUnloadingSubmitting ||
                 getStopStatus(selectedStop) === 'Completed' ||
-                !hasStopCoordinates(selectedStop)
+                !hasStopCoordinates(selectedStop) ||
+                !radiusCheck.allowed
               }
+              className="w-full sm:w-auto"
             >
               {isUnloadingSubmitting
                 ? 'Saving...'
                 : getStopStatus(selectedStop) === 'Unloading'
-                  ? 'Done'
+                  ? proofImage
+                    ? 'Submit & Complete'
+                    : 'Done'
                   : getStopStatus(selectedStop) === 'Completed'
                     ? 'Completed'
                     : 'Unloading'}

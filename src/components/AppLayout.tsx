@@ -6,7 +6,7 @@ import {
   BiometryError,
   BiometryErrorType,
 } from '@aparajita/capacitor-biometric-auth';
-import { Clock, LogIn, LogOut, Coffee, Play, Camera, QrCode, Check, X, Loader2, Home, User, Users, Menu, MapPin, Calendar, Timer, ArrowRight, Filter, Download, Search, RefreshCw, Building2, Mail, Phone, Shield, Eye, EyeOff, Zap, Truck, History } from 'lucide-react';
+import { Clock, LogIn, LogOut, Coffee, Play, Camera, QrCode, Check, X, Loader2, Home, User, Users, Menu, MapPin, Calendar, Timer, ArrowRight, Filter, Download, Search, RefreshCw, Building2, Mail, Phone, Shield, Eye, EyeOff, Zap, Truck, History, Settings } from 'lucide-react';
 import { erpRequest, extractErrorMessage, setErpSid } from '@/lib/erpApi';
 import { toast } from '@/components/ui/sonner';
 import { getCurrentLocation } from '@/lib/location';
@@ -14,6 +14,7 @@ import type { Checkin } from '@/types';
 import HistoryMap from '@/components/HistoryMap';
 import DeliveryPage from '@/components/DeliveryPage';
 import DeliveryHistoryPage from '@/components/DeliveryHistoryPage';
+import SettingsPage from '@/components/SettingsPage';
 
 interface Employee {
   id: string;
@@ -30,7 +31,7 @@ interface Employee {
   latestCheckin?: Checkin;
 }
 
-type ViewType = 'dashboard' | 'scan' | 'history' | 'profile' | 'admin' | 'delivery' | 'delivery_history';
+type ViewType = 'dashboard' | 'scan' | 'history' | 'profile' | 'settings' | 'admin' | 'delivery' | 'delivery_history';
 
 const AppLayout: React.FC = () => {
   const GEOFENCE_CHECK_INTERVAL_MS = 5000;
@@ -47,6 +48,8 @@ const AppLayout: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [biometricEnabled, setBiometricEnabled] = useState(false);
+  const [isAndroidNative, setIsAndroidNative] = useState(false);
   const [geoStatus, setGeoStatus] = useState<{
     checking: boolean;
     allowed: boolean;
@@ -121,6 +124,11 @@ const AppLayout: React.FC = () => {
       setEmployee(emp);
       fetchCheckins();
     }
+    const storedBiometric = localStorage.getItem('settings.biometricEnabled');
+    if (storedBiometric !== null) {
+      setBiometricEnabled(storedBiometric === 'true');
+    }
+    setIsAndroidNative(Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android');
     setLoading(false);
   }, []);
 
@@ -277,6 +285,17 @@ const AppLayout: React.FC = () => {
     }
   }, [employee, currentView, isDeliveryDriver]);
 
+  useEffect(() => {
+    if (!isAndroidNative && currentView === 'settings') {
+      setCurrentView('dashboard');
+    }
+  }, [isAndroidNative, currentView]);
+
+  const handleBiometricToggle = (enabled: boolean) => {
+    setBiometricEnabled(enabled);
+    localStorage.setItem('settings.biometricEnabled', enabled ? 'true' : 'false');
+  };
+
   const handleCheckin = async (checkType: 'in' | 'out' | 'break_start' | 'break_end') => {
     if (!employee) return;
     try {
@@ -286,7 +305,7 @@ const AppLayout: React.FC = () => {
 
       setCheckinLoading(true);
 
-      const requireBiometric = Capacitor.getPlatform() === 'android';
+      const requireBiometric = biometricEnabled && Capacitor.getPlatform() === 'android';
       if (requireBiometric && Capacitor.isNativePlatform()) {
         const info = await BiometricAuth.checkBiometry();
         if (!info.isAvailable) {
@@ -506,6 +525,9 @@ const AppLayout: React.FC = () => {
         ]
       : []),
     { id: 'profile' as ViewType, label: 'Profile', icon: User },
+    ...(!isDeliveryDriver && isAndroidNative
+      ? [{ id: 'settings' as ViewType, label: 'Settings', icon: Settings }]
+      : []),
     ...(isDeliveryDriver
       ? [
           { id: 'delivery' as ViewType, label: 'Delivery', icon: Truck },
@@ -672,9 +694,11 @@ const AppLayout: React.FC = () => {
                   {!geoStatus.initialized ? 'Checking location...' : geoStatus.message}
                   {geoStatus.distanceMeters !== undefined ? ` (${geoStatus.distanceMeters.toFixed(1)}m)` : ''}
                 </p>
-                <p className="mt-2 text-xs text-slate-500">
-                  Biometric authentication is required on Android for check in/out.
-                </p>
+                {biometricEnabled && Capacitor.getPlatform() === 'android' && (
+                  <p className="mt-2 text-xs text-slate-500">
+                    Biometric authentication is required on Android for check in/out.
+                  </p>
+                )}
                 {/* <div className="mt-6 flex items-center gap-2 text-slate-500 text-sm"><MapPin className="w-4 h-4" /><span>Location: Main Office</span></div> */}
               </div>
             </div>
@@ -770,6 +794,14 @@ const AppLayout: React.FC = () => {
               </div>
             </div>
           </div>
+        )}
+
+        {/* Settings View */}
+        {currentView === 'settings' && (
+          <SettingsPage
+            biometricEnabled={biometricEnabled}
+            onBiometricToggle={handleBiometricToggle}
+          />
         )}
 
         {/* Admin View */}
