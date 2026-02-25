@@ -120,9 +120,14 @@ const AppLayout: React.FC = () => {
   useEffect(() => {
     const storedEmployee = localStorage.getItem('employee');
     if (storedEmployee) {
-      const emp = JSON.parse(storedEmployee);
-      setEmployee(emp);
-      fetchCheckins();
+      try {
+        const emp = JSON.parse(storedEmployee);
+        setEmployee(emp);
+        fetchCheckins();
+      } catch (err) {
+        console.warn('Invalid employee data in storage; clearing.', err);
+        localStorage.removeItem('employee');
+      }
     }
     const storedBiometric = localStorage.getItem('settings.biometricEnabled');
     if (storedBiometric !== null) {
@@ -290,6 +295,12 @@ const AppLayout: React.FC = () => {
       setCurrentView('dashboard');
     }
   }, [isAndroidNative, currentView]);
+
+  useEffect(() => {
+    if (mobileMenuOpen) {
+      setMobileMenuOpen(false);
+    }
+  }, [currentView]);
 
   const handleBiometricToggle = (enabled: boolean) => {
     setBiometricEnabled(enabled);
@@ -830,7 +841,7 @@ const AppLayout: React.FC = () => {
               <div className="w-8 h-8 bg-gradient-to-br from-blue-400 to-blue-600 rounded-lg flex items-center justify-center"><Clock className="w-5 h-5 text-white" /></div>
               <span className="font-bold">GeoTime QCMC</span>
             </div>
-            <p className="text-slate-400 text-sm">© 2026 GeoTime QCMC. All rights reserved.</p>
+            <p className="text-slate-400 text-sm">(c) 2026 GeoTime QCMC. All rights reserved.</p>
           </div>
         </div>
       </footer>
