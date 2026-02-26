@@ -76,6 +76,13 @@ const truncateText = (value: string, maxLength: number) => {
   return `${value.slice(0, Math.max(0, maxLength - 3))}...`;
 };
 
+const asRecord = (value: unknown): Record<string, unknown> => {
+  if (!value || typeof value !== 'object') return {};
+  return value as Record<string, unknown>;
+};
+
+const readString = (value: unknown) => (typeof value === 'string' ? value : undefined);
+
 const DEFAULT_GEOFENCE_RADIUS_METERS = 150;
 
 const isFiniteNumber = (value?: number) => Number.isFinite(value);
@@ -123,8 +130,10 @@ const DeliveryPage: React.FC<DeliveryPageProps> = ({
   const stopKey = (stop?: DeliveryStop | null) =>
     stop?.name || `${stop?.customer || ''}||${normalizeAddress(stop?.customer_address || stop?.address || '')}`;
 
-  const getStopStatus = (stop?: DeliveryStop | null) =>
-    statusByStop.get(stopKey(stop)) || '';
+  const getStopStatus = React.useCallback(
+    (stop?: DeliveryStop | null) => statusByStop.get(stopKey(stop)) || '',
+    [statusByStop]
+  );
 
   const getStatusBadge = (stop?: DeliveryStop | null) => {
     const status = getStopStatus(stop);
@@ -223,10 +232,10 @@ const DeliveryPage: React.FC<DeliveryPageProps> = ({
         }
         const statuses = Array.isArray(payload?.statuses) ? payload.statuses : [];
         const map = new Map<string, string>();
-        statuses.forEach((item: any) => {
-          if (!item) return;
-          const key = String(item.key || '').trim();
-          const status = String(item.status || '').trim();
+        statuses.forEach((entry) => {
+          const item = asRecord(entry);
+          const key = String(readString(item.key) || '').trim();
+          const status = String(readString(item.status) || '').trim();
           if (key && status) map.set(key, status);
         });
         if (alive) setStatusByStop(map);
@@ -246,7 +255,7 @@ const DeliveryPage: React.FC<DeliveryPageProps> = ({
       if (status === 'Completed') return false;
       return !(stop.visited === true || stop.visited === 1);
     });
-  }, [stops, statusByStop]);
+  }, [stops, getStopStatus]);
 
   const remainingStops = useMemo(
     () =>
@@ -255,7 +264,7 @@ const DeliveryPage: React.FC<DeliveryPageProps> = ({
         if (status === 'Completed') return false;
         return !(stop.visited === true || stop.visited === 1);
       }),
-    [stops, statusByStop]
+    [stops, getStopStatus]
   );
 
   const formatPoint = (lat?: number, lng?: number) => {

@@ -1,5 +1,6 @@
 export interface Employee {
   id: string;
+  employee_id?: string;
   email: string;
   full_name: string;
   department: string;
@@ -24,4 +25,12 @@ export interface Checkin {
   longitude?: number;
 }
 
-export type ViewType = 'dashboard' | 'scan' | 'history' | 'profile' | 'admin';
+export type ViewType =
+  | 'dashboard'
+  | 'scan'
+  | 'history'
+  | 'profile'
+  | 'settings'
+  | 'admin'
+  | 'delivery'
+  | 'delivery_history';

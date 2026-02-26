@@ -1,7 +1,7 @@
 import { Capacitor, CapacitorHttp } from "@capacitor/core";
+import { getErpSid, setErpSid } from "@/lib/erpSession";
 
 const DEFAULT_ERP_BASE_URL = "https://erp.qcstyro.com"; // "http://qc-styro.local:8000"; //
-const ERP_SID_KEY = "erp_sid";
 
 const trimTrailingSlash = (value: string) => value.replace(/\/+$/, "");
 
@@ -27,7 +27,7 @@ export const erpApiUrl = (endpoint: string) => {
   return `${trimTrailingSlash(base)}${normalizedEndpoint}`;
 };
 
-export const parseJsonResponse = async (response: Response): Promise<any> => {
+export const parseJsonResponse = async (response: Response): Promise<unknown> => {
   const rawBody = await response.text();
 
   if (!rawBody.trim()) {
@@ -47,36 +47,18 @@ export const parseJsonResponse = async (response: Response): Promise<any> => {
 type ErpRequestOptions = {
   method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   headers?: Record<string, string>;
-  body?: Record<string, any> | string | null;
+  body?: Record<string, unknown> | string | null;
 };
 
 type ErpRequestResult = {
   ok: boolean;
   status: number;
-  data: any;
+  data: unknown;
 };
 
-export const getErpSid = () => {
-  try {
-    return localStorage.getItem(ERP_SID_KEY) || "";
-  } catch {
-    return "";
-  }
-};
+export { getErpSid, setErpSid };
 
-export const setErpSid = (sid?: string | null) => {
-  try {
-    if (sid && sid.trim()) {
-      localStorage.setItem(ERP_SID_KEY, sid.trim());
-      return;
-    }
-    localStorage.removeItem(ERP_SID_KEY);
-  } catch {
-    // Ignore storage errors on restricted contexts.
-  }
-};
-
-const parsePossibleJson = (value: any) => {
+const parsePossibleJson = (value: unknown): unknown => {
   if (typeof value !== "string") {
     return value;
   }
@@ -104,7 +86,7 @@ export const erpRequest = async (
 
   if (isNative) {
     try {
-      const sid = getErpSid();
+      const sid = await getErpSid();
       const nativeHeaders = { ...headers };
       if (sid && !nativeHeaders.Cookie) {
         nativeHeaders.Cookie = `sid=${sid}`;
@@ -147,21 +129,28 @@ export const erpRequest = async (
   }
 };
 
-export const extractErrorMessage = (data: any, fallback: string) => {
+const asRecord = (value: unknown): Record<string, unknown> | null => {
+  if (!value || typeof value !== "object") return null;
+  return value as Record<string, unknown>;
+};
+
+export const extractErrorMessage = (data: unknown, fallback: string) => {
   if (typeof data === "string" && data.trim()) {
     return data;
   }
-  if (typeof data?.message === "string" && data.message.trim()) {
-    return data.message;
-  }
-  if (typeof data?.exception === "string" && data.exception.trim()) {
-    return data.exception;
-  }
-  if (typeof data?.exc === "string" && data.exc.trim()) {
-    return data.exc;
-  }
-  if (typeof data?._server_messages === "string" && data._server_messages.trim()) {
-    return data._server_messages;
-  }
+  const record = asRecord(data);
+  const message = record && typeof record.message === "string" ? record.message : "";
+  if (message.trim()) return message;
+
+  const exception = record && typeof record.exception === "string" ? record.exception : "";
+  if (exception.trim()) return exception;
+
+  const exc = record && typeof record.exc === "string" ? record.exc : "";
+  if (exc.trim()) return exc;
+
+  const serverMessages =
+    record && typeof record._server_messages === "string" ? record._server_messages : "";
+  if (serverMessages.trim()) return serverMessages;
+
   return fallback;
 };

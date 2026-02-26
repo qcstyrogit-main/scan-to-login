@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Employee, Checkin } from '@/types';
 import { Camera, QrCode, Check, X, Loader2, LogIn, LogOut, Coffee, Play, MapPin } from 'lucide-react';
@@ -51,7 +51,7 @@ const Scanner: React.FC<ScannerProps> = ({ employee, onCheckin }) => {
     setScanning(false);
   };
 
-  const performCheckin = async (scanCode?: string) => {
+  const performCheckin = useCallback(async (scanCode?: string) => {
     setLoading(true);
     setError(null);
     setSuccess(null);
@@ -83,18 +83,17 @@ const Scanner: React.FC<ScannerProps> = ({ employee, onCheckin }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [employee.id, selectedType, onCheckin]);
 
   // Simulate QR code detection
   useEffect(() => {
-    if (scanning && cameraActive) {
-      const timer = setTimeout(() => {
-        const simulatedCode = `EMP-${employee.id.slice(0, 8)}-${Date.now()}`;
-        performCheckin(simulatedCode);
-      }, 2500);
-      return () => clearTimeout(timer);
-    }
-  }, [scanning, cameraActive]);
+    if (!scanning || !cameraActive) return;
+    const timer = setTimeout(() => {
+      const simulatedCode = `EMP-${employee.id.slice(0, 8)}-${Date.now()}`;
+      performCheckin(simulatedCode);
+    }, 2500);
+    return () => clearTimeout(timer);
+  }, [scanning, cameraActive, employee.id, performCheckin]);
 
   useEffect(() => {
     return () => stopCamera();

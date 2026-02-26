@@ -170,7 +170,7 @@ const CheckinHistory: React.FC<CheckinHistoryProps> = ({ checkins }) => {
                         <p className="font-medium text-slate-800">{config.label}</p>
                         {/* <p className="text-sm text-slate-500 truncate">
                           {checkin.location || 'Main Office'}
-                          {checkin.scan_code && ` • Code: ${checkin.scan_code.slice(0, 12)}...`}
+                          {checkin.scan_code && ` - Code: ${checkin.scan_code.slice(0, 12)}...`}
                         </p> */}
                       </div>
                       <div className="text-right flex-shrink-0">

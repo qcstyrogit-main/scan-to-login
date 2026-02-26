@@ -12,15 +12,21 @@ const ensureLocationPermission = async (usage: LocationUsage) => {
   const isNative = platform === "android" || platform === "ios";
 
   if (isNative) {
-    const current = await Geolocation.checkPermissions();
+    const current = (await Geolocation.checkPermissions()) as {
+      location?: string;
+      coarseLocation?: string;
+    };
     const hasPermission =
-      current.location === "granted" || (current as any).coarseLocation === "granted";
+      current.location === "granted" || current.coarseLocation === "granted";
 
     if (hasPermission) return;
 
-    const requested = await Geolocation.requestPermissions();
+    const requested = (await Geolocation.requestPermissions()) as {
+      location?: string;
+      coarseLocation?: string;
+    };
     const granted =
-      requested.location === "granted" || (requested as any).coarseLocation === "granted";
+      requested.location === "granted" || requested.coarseLocation === "granted";
 
     if (!granted) {
       throw new Error(

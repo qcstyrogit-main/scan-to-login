@@ -249,7 +249,7 @@ const DeliveryHistoryPage: React.FC<DeliveryHistoryPageProps> = ({ employeeId, d
                   <p className="font-medium text-slate-800">{log.customer || 'Customer'}</p>
                   <p className="text-sm text-slate-500">{log.address || '--'}</p>
                   <p className="text-xs text-slate-400 mt-1">
-                    Trip: {log.delivery_trip || '--'} Â· Vehicle: {log.vehicle || '--'}
+                    Trip: {log.delivery_trip || '--'} - Vehicle: {log.vehicle || '--'}
                   </p>
                   {log.total_time_of_completion && (
                     <p className="text-xs text-slate-400 mt-1">
@@ -277,7 +277,7 @@ const DeliveryHistoryPage: React.FC<DeliveryHistoryPageProps> = ({ employeeId, d
                   <p className="font-medium text-slate-800">{trip.name}</p>
                   <p className="text-sm text-slate-500">{trip.company || '--'}</p>
                   <p className="text-xs text-slate-400 mt-1">
-                    Vehicle: {trip.vehicle || '--'} Â· Driver: {trip.driver_name || trip.driver || '--'}
+                    Vehicle: {trip.vehicle || '--'} - Driver: {trip.driver_name || trip.driver || '--'}
                   </p>
                 </div>
                 <div className="text-right">

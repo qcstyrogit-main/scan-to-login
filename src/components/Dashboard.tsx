@@ -79,7 +79,7 @@ const Dashboard: React.FC<DashboardProps> = ({ employee, latestCheckin, recentCh
           <div>
             <p className="text-blue-100 mb-1">Welcome back,</p>
             <h1 className="text-2xl font-bold mb-2">{employee.full_name}</h1>
-            <p className="text-blue-100">{employee.department} • {employee.role === 'admin' ? 'Administrator' : 'Employee'}</p>
+            <p className="text-blue-100">{employee.department} - {employee.designation || 'Designation'}</p>
           </div>
           <div className="text-right">
             <p className="text-blue-100 text-sm">{new Date().toLocaleDateString('en-US', { weekday: 'long' })}</p>
@@ -132,14 +132,14 @@ const Dashboard: React.FC<DashboardProps> = ({ employee, latestCheckin, recentCh
             </div>
             <div>
               <p className="text-slate-500 text-sm">Quick Action</p>
-              <p className="font-semibold text-slate-800">Ready to scan</p>
+              <p className="font-semibold text-slate-800">Ready to login</p>
             </div>
           </div>
           <button
             onClick={() => onNavigate('scan')}
             className="w-full bg-blue-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
           >
-            Scan Now <ArrowRight className="w-4 h-4" />
+            Login Now <ArrowRight className="w-4 h-4" />
           </button>
         </div>
       </div>

@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo } from 'react';
+import type { GeoJsonObject } from 'geojson';
 import { GeoJSON, MapContainer, Marker, Popup, Polyline, TileLayer, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
@@ -17,7 +18,7 @@ type RouteStop = {
 
 type DeliveryRouteMapProps = {
   stops: RouteStop[];
-  routeGeojson?: unknown;
+  routeGeojson?: GeoJsonObject | null;
   startLabel?: string;
   startLatitude?: number | string;
   startLongitude?: number | string;
@@ -131,7 +132,7 @@ const DeliveryRouteMap: React.FC<DeliveryRouteMapProps> = ({
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
-          {routeGeojson ? <GeoJSON data={routeGeojson as any} /> : null}
+          {routeGeojson ? <GeoJSON data={routeGeojson} /> : null}
           {startPoint && (
             <Marker position={startPoint} icon={deliveryMarkerIcon}>
               <Popup>

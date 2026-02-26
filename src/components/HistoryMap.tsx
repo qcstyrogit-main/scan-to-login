@@ -79,27 +79,33 @@ const HistoryMap: React.FC<HistoryMapProps> = ({ checkins, selectedId }) => {
       .filter(hasCoords);
   }, [checkins]);
 
-  const selected =
-    mapCheckins.find((checkin) => checkin.id === selectedId) ?? mapCheckins[0];
-
-  if (!selected || selected.latitude === undefined || selected.longitude === undefined) {
-    return (
-      <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6">
-        <p className="text-slate-600 font-medium">Map unavailable</p>
-        <p className="text-sm text-slate-500 mt-1">
-          No location data found for your history yet.
-        </p>
-      </div>
-    );
-  }
-
-  const position: [number, number] = [selected.latitude, selected.longitude];
-  const label = selected.location || 'Check-in location';
+  const selected = useMemo(
+    () => mapCheckins.find((checkin) => checkin.id === selectedId) ?? mapCheckins[0],
+    [mapCheckins, selectedId]
+  );
+  const position = useMemo(() => {
+    if (!selected || selected.latitude === undefined || selected.longitude === undefined) {
+      return null;
+    }
+    return [selected.latitude, selected.longitude] as [number, number];
+  }, [selected]);
+  const positionKey = useMemo(() => {
+    if (!position) return null;
+    return `${position[0].toFixed(6)},${position[1].toFixed(6)}`;
+  }, [position]);
+  const label = selected?.location || 'Check-in location';
 
   useEffect(() => {
     let alive = true;
+    if (!position || !positionKey) {
+      setAddress('');
+      setAddressLoading(false);
+      return () => {
+        alive = false;
+      };
+    }
     const loadAddress = async () => {
-      const key = `${position[0].toFixed(6)},${position[1].toFixed(6)}`;
+      const key = positionKey;
       const cached = addressCache.current.get(key);
       if (cached) {
         setAddress(cached);
@@ -134,7 +140,18 @@ const HistoryMap: React.FC<HistoryMapProps> = ({ checkins, selectedId }) => {
     return () => {
       alive = false;
     };
-  }, [position[0], position[1]]);
+  }, [position, positionKey]);
+
+  if (!position) {
+    return (
+      <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6">
+        <p className="text-slate-600 font-medium">Map unavailable</p>
+        <p className="text-sm text-slate-500 mt-1">
+          No location data found for your history yet.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">

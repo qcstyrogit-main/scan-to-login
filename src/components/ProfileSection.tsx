@@ -1,34 +1,12 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Employee } from '@/types';
-import { User, Mail, Phone, Building2, Shield, Camera, Save, X, Edit2 } from 'lucide-react';
+import { User, Mail, Building2, Shield } from 'lucide-react';
 
 interface ProfileSectionProps {
   employee: Employee;
-  onUpdate: (updates: Partial<Employee>) => void;
 }
 
-const ProfileSection: React.FC<ProfileSectionProps> = ({ employee, onUpdate }) => {
-  const [editing, setEditing] = useState(false);
-  const [formData, setFormData] = useState({
-    full_name: employee.full_name,
-    phone: employee.phone || '',
-    department: employee.department,
-  });
-
-  const handleSave = () => {
-    onUpdate(formData);
-    setEditing(false);
-  };
-
-  const handleCancel = () => {
-    setFormData({
-      full_name: employee.full_name,
-      phone: employee.phone || '',
-      department: employee.department,
-    });
-    setEditing(false);
-  };
-
+const ProfileSection: React.FC<ProfileSectionProps> = ({ employee }) => {
   const getInitials = (name: string) => {
     return name.split(' ').map(n => n[0]).join('').toUpperCase();
   };
@@ -53,9 +31,6 @@ const ProfileSection: React.FC<ProfileSectionProps> = ({ employee, onUpdate }) =
                   </span>
                 )}
               </div>
-              <button className="absolute -bottom-1 -right-1 w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white hover:bg-blue-700 transition-colors shadow-lg">
-                <Camera className="w-4 h-4" />
-              </button>
             </div>
           </div>
         </div>
@@ -80,32 +55,6 @@ const ProfileSection: React.FC<ProfileSectionProps> = ({ employee, onUpdate }) =
       <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
         <div className="flex items-center justify-between mb-6">
           <h3 className="text-lg font-semibold text-slate-800">Profile Information</h3>
-          {!editing ? (
-            <button
-              onClick={() => setEditing(true)}
-              className="flex items-center gap-2 px-4 py-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors font-medium text-sm"
-            >
-              <Edit2 className="w-4 h-4" />
-              Edit Profile
-            </button>
-          ) : (
-            <div className="flex gap-2">
-              <button
-                onClick={handleCancel}
-                className="flex items-center gap-2 px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors font-medium text-sm"
-              >
-                <X className="w-4 h-4" />
-                Cancel
-              </button>
-              <button
-                onClick={handleSave}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium text-sm"
-              >
-                <Save className="w-4 h-4" />
-                Save
-              </button>
-            </div>
-          )}
         </div>
 
         <div className="space-y-5">
@@ -115,16 +64,7 @@ const ProfileSection: React.FC<ProfileSectionProps> = ({ employee, onUpdate }) =
               <User className="w-4 h-4" />
               Full Name
             </label>
-            {editing ? (
-              <input
-                type="text"
-                value={formData.full_name}
-                onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
-                className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-              />
-            ) : (
-              <p className="px-4 py-3 bg-slate-50 rounded-xl text-slate-800">{employee.full_name}</p>
-            )}
+            <p className="px-4 py-3 bg-slate-50 rounded-xl text-slate-800">{employee.full_name}</p>
           </div>
 
           {/* Email */}
@@ -137,26 +77,6 @@ const ProfileSection: React.FC<ProfileSectionProps> = ({ employee, onUpdate }) =
             <p className="text-xs text-slate-400 mt-1">Email cannot be changed</p>
           </div>
 
-          {/* Phone */}
-          <div>
-            <label className="flex items-center gap-2 text-sm font-medium text-slate-600 mb-2">
-              <Phone className="w-4 h-4" />
-              Phone Number
-            </label>
-            {editing ? (
-              <input
-                type="tel"
-                value={formData.phone}
-                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                placeholder="Enter phone number"
-                className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-              />
-            ) : (
-              <p className="px-4 py-3 bg-slate-50 rounded-xl text-slate-800">
-                {employee.phone || 'Not provided'}
-              </p>
-            )}
-          </div>
 
           {/* Department */}
           <div>
@@ -164,53 +84,22 @@ const ProfileSection: React.FC<ProfileSectionProps> = ({ employee, onUpdate }) =
               <Building2 className="w-4 h-4" />
               Department
             </label>
-            {editing ? (
-              <select
-                value={formData.department}
-                onChange={(e) => setFormData({ ...formData, department: e.target.value })}
-                className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none bg-white"
-              >
-                <option value="Engineering">Engineering</option>
-                <option value="Marketing">Marketing</option>
-                <option value="Sales">Sales</option>
-                <option value="HR">HR</option>
-                <option value="Finance">Finance</option>
-                <option value="Design">Design</option>
-                <option value="Management">Management</option>
-                <option value="General">General</option>
-              </select>
-            ) : (
-              <p className="px-4 py-3 bg-slate-50 rounded-xl text-slate-800">{employee.department}</p>
-            )}
+            <p className="px-4 py-3 bg-slate-50 rounded-xl text-slate-800">{employee.department}</p>
           </div>
 
           {/* Role */}
           <div>
             <label className="flex items-center gap-2 text-sm font-medium text-slate-600 mb-2">
               <Shield className="w-4 h-4" />
-              Role
+              Designation
             </label>
             <p className="px-4 py-3 bg-slate-50 rounded-xl text-slate-800">
-              {employee.role === 'admin' ? 'Administrator' : 'Employee'}
+              {employee.designation || 'Designation'}
             </p>
-            <p className="text-xs text-slate-400 mt-1">Contact admin to change role</p>
           </div>
         </div>
       </div>
 
-      {/* Security Section */}
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
-        <h3 className="text-lg font-semibold text-slate-800 mb-4">Security</h3>
-        <button className="w-full px-4 py-3 border border-slate-200 rounded-xl text-left hover:bg-slate-50 transition-colors flex items-center justify-between">
-          <div>
-            <p className="font-medium text-slate-800">Change Password</p>
-            <p className="text-sm text-slate-500">Update your password regularly for security</p>
-          </div>
-          <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-          </svg>
-        </button>
-      </div>
     </div>
   );
 };

@@ -5,6 +5,16 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Keep Leaflet map layers below the app nav/menu */
+.leaflet-container {
+  z-index: 0;
+}
+.leaflet-pane,
+.leaflet-top,
+.leaflet-bottom {
+  z-index: 10;
+}
+
 @layer base {
   :root {
     --background: 210 40% 98%;
