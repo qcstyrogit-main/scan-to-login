@@ -15,6 +15,9 @@ const SimpleFooter: React.FC = () => {
           position: relative;
           overflow: hidden;
         }
+        @media (max-width: 767px) {
+          .footer-root { display: block; padding-bottom: calc(64px + env(safe-area-inset-bottom)); }
+        }
 
         .footer-root::before {
           content: '';

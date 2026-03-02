@@ -33,6 +33,8 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ biometricEnabled, onBiometr
           color: hsl(var(--foreground));
           position: relative;
           overflow-x: hidden;
+          display: flex;
+          flex-direction: column;
         }
 
         .settings-root::before {
@@ -59,7 +61,14 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ biometricEnabled, onBiometr
           z-index: 0;
         }
 
-        .settings-content { position: relative; z-index: 1; max-width: 960px; margin: 0 auto; }
+        .settings-content {
+          position: relative;
+          z-index: 1;
+          max-width: 960px;
+          margin: 0 auto;
+          width: 100%;
+          flex: 1;
+        }
 
         .settings-card {
           background: linear-gradient(135deg, hsl(var(--card)) 0%, hsl(var(--secondary)) 100%);
@@ -201,7 +210,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ biometricEnabled, onBiometr
               </div>
             )}
 
-            {platformReady && isNative && (
+            {platformReady && (
               <div className="settings-section">
                 <div className="settings-row">
                   <div className="settings-row-icon">
@@ -228,7 +237,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ biometricEnabled, onBiometr
               </div>
             )}
 
-            {platformReady && isNative && isAndroid && (
+            {platformReady && (
               <div className="settings-section">
                 <div className="settings-row">
                   <div className="settings-row-icon">
@@ -242,20 +251,26 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ biometricEnabled, onBiometr
                           Use fingerprint or face recognition before check in/out.
                         </div>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => onBiometricToggle(!biometricEnabled)}
-                        className={`settings-switch ${biometricEnabled ? 'on' : ''}`}
-                        role="switch"
-                        aria-checked={biometricEnabled}
-                        aria-label="Require biometrics for check in or check out"
-                      >
-                        <span className={`settings-thumb ${biometricEnabled ? 'on' : ''}`} />
-                      </button>
+                      {isNative && isAndroid ? (
+                        <button
+                          type="button"
+                          onClick={() => onBiometricToggle(!biometricEnabled)}
+                          className={`settings-switch ${biometricEnabled ? 'on' : ''}`}
+                          role="switch"
+                          aria-checked={biometricEnabled}
+                          aria-label="Require biometrics for check in or check out"
+                        >
+                          <span className={`settings-thumb ${biometricEnabled ? 'on' : ''}`} />
+                        </button>
+                      ) : (
+                        <div className="settings-muted">Android app only</div>
+                      )}
                     </div>
-                    <div className="settings-muted">
-                      Currently {biometricEnabled ? 'on' : 'off'}.
-                    </div>
+                    {isNative && isAndroid && (
+                      <div className="settings-muted">
+                        Currently {biometricEnabled ? 'on' : 'off'}.
+                      </div>
+                    )}
                     <div className="settings-note">
                       <Info className="w-4 h-4 mt-0.5 text-muted-foreground" />
                       <p>

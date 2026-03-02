@@ -174,6 +174,7 @@ const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) => (
       }
       @media (min-width: 640px) { .app-main { padding: 24px 20px 48px; } }
       @media (min-width: 1024px) { .app-main { padding: 28px 32px 56px; } }
+      @media (max-width: 767px) { .app-main { padding-bottom: 90px; } }
 
       /* Global scrollbar for dark theme */
       ::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -278,10 +279,6 @@ const AppLayout: React.FC = () => {
       setCurrentView('dashboard');
     }
   }, [employee, currentView, isDeliveryDriver]);
-
-  useEffect(() => {
-    if (!isAndroidNative && currentView === 'settings') setCurrentView('dashboard');
-  }, [isAndroidNative, currentView]);
 
   useEffect(() => {
     if (employee?.role !== 'admin' && currentView === 'admin') setCurrentView('dashboard');
@@ -483,7 +480,6 @@ const AppLayout: React.FC = () => {
         employee={employee}
         currentView={currentView}
         onNavigate={setCurrentView}
-        onLogout={handleLogout}
         isAndroidNative={isAndroidNative}
         isDeliveryDriver={isDeliveryDriver}
       />
@@ -529,7 +525,12 @@ const AppLayout: React.FC = () => {
             driverId={employee.id}
           />
         )}
-        {currentView === 'profile' && <ProfileSection employee={employee} />}
+        {currentView === 'profile' && (
+          <ProfileSection
+            employee={employee}
+            onLogout={handleLogout}
+          />
+        )}
         {currentView === 'settings' && (
           <SettingsPage
             biometricEnabled={biometricEnabled}
@@ -539,7 +540,7 @@ const AppLayout: React.FC = () => {
         {currentView === 'admin' && employee.role === 'admin' && <AdminPanel />}
       </main>
 
-      <SimpleFooter />
+      {currentView === 'settings' && <SimpleFooter />}
     </AppShell>
   );
 };

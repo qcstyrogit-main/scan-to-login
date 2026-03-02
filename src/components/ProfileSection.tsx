@@ -4,9 +4,11 @@ import { User, Mail, Building2, Shield, Briefcase } from 'lucide-react';
 
 interface ProfileSectionProps {
   employee: Employee;
+  onLogout: () => void;
 }
 
-const ProfileSection: React.FC<ProfileSectionProps> = ({ employee }) => {
+const ProfileSection: React.FC<ProfileSectionProps> = ({ employee, onLogout }) => {
+  const [showLogoutConfirm, setShowLogoutConfirm] = React.useState(false);
   const initials = (name: string) =>
     name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
 
@@ -159,6 +161,79 @@ const ProfileSection: React.FC<ProfileSectionProps> = ({ employee }) => {
         }
         .ps-field-email { font-family: 'JetBrains Mono', monospace; font-size: 13px; }
         .ps-field-hint  { font-size: 11px; color: hsl(var(--muted-foreground) / 0.8); margin-top: 4px; }
+
+        .ps-logout-row {
+          padding: 14px 24px 18px;
+          border-top: 1px solid hsl(var(--border) / 0.6);
+          display: flex;
+          justify-content: flex-end;
+        }
+        .ps-logout-btn {
+          padding: 10px 16px;
+          border-radius: 12px;
+          border: 1px solid hsl(var(--destructive) / 0.35);
+          background: hsl(var(--destructive) / 0.12);
+          color: hsl(var(--destructive));
+          font-size: 13px;
+          font-weight: 600;
+          cursor: pointer;
+          font-family: 'Sora', sans-serif;
+          transition: background 0.15s, color 0.15s;
+        }
+        .ps-logout-btn:hover { background: hsl(var(--destructive) / 0.2); }
+
+        .ps-modal-bg {
+          position: fixed;
+          inset: 0;
+          z-index: 80;
+          background: hsl(var(--background) / 0.7);
+          backdrop-filter: blur(4px);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 24px;
+          animation: psModalFade 0.2s ease both;
+        }
+        @keyframes psModalFade { from { opacity: 0; } to { opacity: 1; } }
+        .ps-modal {
+          width: 100%;
+          max-width: 340px;
+          background: hsl(var(--card));
+          border: 1px solid hsl(var(--border));
+          border-radius: 18px;
+          padding: 24px;
+          position: relative;
+          overflow: hidden;
+          animation: psModalUp 0.25s cubic-bezier(0.16,1,0.3,1) both;
+        }
+        @keyframes psModalUp { from { opacity: 0; transform: translateY(16px) scale(0.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
+        .ps-modal-title { font-size: 16px; font-weight: 700; color: hsl(var(--foreground)); margin-bottom: 8px; }
+        .ps-modal-sub   { font-size: 13px; color: hsl(var(--muted-foreground)); margin-bottom: 20px; }
+        .ps-modal-btns { display: flex; gap: 10px; }
+        .ps-modal-cancel {
+          flex: 1;
+          padding: 10px;
+          background: hsl(var(--foreground) / 0.05);
+          border: 1px solid hsl(var(--border));
+          border-radius: 10px;
+          color: hsl(var(--muted-foreground));
+          font-size: 13px;
+          font-weight: 500;
+          cursor: pointer;
+          font-family: 'Sora', sans-serif;
+        }
+        .ps-modal-confirm {
+          flex: 1;
+          padding: 10px;
+          background: hsl(var(--destructive) / 0.15);
+          border: 1px solid hsl(var(--destructive) / 0.25);
+          border-radius: 10px;
+          color: hsl(var(--destructive));
+          font-size: 13px;
+          font-weight: 600;
+          cursor: pointer;
+          font-family: 'Sora', sans-serif;
+        }
       `}</style>
 
       <div className="ps">
@@ -211,8 +286,44 @@ const ProfileSection: React.FC<ProfileSectionProps> = ({ employee }) => {
               </div>
             </div>
           ))}
+          <div className="ps-logout-row">
+            <button
+              className="ps-logout-btn"
+              type="button"
+              onClick={() => {
+                if (typeof window !== 'undefined') {
+                  window.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
+                }
+                setShowLogoutConfirm(true);
+              }}
+            >
+              Logout
+            </button>
+          </div>
         </div>
 
+        {showLogoutConfirm && (
+          <div className="ps-modal-bg" onClick={() => setShowLogoutConfirm(false)}>
+            <div className="ps-modal" onClick={(e) => e.stopPropagation()}>
+              <div className="ps-modal-title">Log out?</div>
+              <div className="ps-modal-sub">Are you sure you want to sign out of your account?</div>
+              <div className="ps-modal-btns">
+                <button className="ps-modal-cancel" onClick={() => setShowLogoutConfirm(false)}>
+                  Cancel
+                </button>
+                <button
+                  className="ps-modal-confirm"
+                  onClick={() => {
+                    setShowLogoutConfirm(false);
+                    onLogout();
+                  }}
+                >
+                  Sign Out
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </>
   );
