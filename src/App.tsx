@@ -11,11 +11,11 @@ import NotFound from "./pages/NotFound";
 const queryClient = new QueryClient();
 
 const App = () => (
-  <ThemeProvider defaultTheme="light">
+  <ThemeProvider defaultTheme="system">
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <Toaster />
-        <Sonner position="top-center" />
+        <Sonner position="bottom-center" offset={24} mobileOffset={16} />
         <BrowserRouter>
           <Routes>
             <Route path="/" element={<Index />} />

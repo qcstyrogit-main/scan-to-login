@@ -106,6 +106,12 @@
     @apply bg-background text-foreground font-sans dark:bg-background dark:text-foreground;
   }
 
+  html,
+  body {
+    touch-action: manipulation;
+    -webkit-text-size-adjust: 100%;
+  }
+
   pre, code {
     @apply font-mono;
   }

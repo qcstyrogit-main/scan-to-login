@@ -203,95 +203,248 @@ const DeliveryHistoryPage: React.FC<DeliveryHistoryPageProps> = ({ employeeId, d
   }, [driverId, employeeId]);
 
   return (
-    <div className="space-y-6">
-      <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6">
-        <div className="flex items-center gap-3">
-          <CheckCircle className="w-6 h-6 text-green-600" />
-          <div>
-            <h2 className="text-xl font-bold text-slate-800">Completed Deliveries</h2>
-            <p className="text-slate-500 text-sm">History of completed delivery logs</p>
-          </div>
-        </div>
-      </div>
+    <>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
-      <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
-        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Package className="w-5 h-5 text-slate-400" />
-            <h3 className="font-semibold text-slate-800">Completed Logs</h3>
-          </div>
-          <span className="text-sm text-slate-500">
-            {loading ? '--' : logs.length ? logs.length : completedTrips.length} total
-          </span>
-        </div>
-        {error ? (
-          <div className="px-6 py-10 text-center text-red-600 text-sm">{error}</div>
-        ) : loading ? (
-          <div className="px-6 py-10 text-center text-slate-500 text-sm">Loading history...</div>
-        ) : logs.length === 0 && completedTrips.length === 0 ? (
-          <div className="px-6 py-10 text-center text-slate-500 text-sm">
-            No completed deliveries yet.
-            <div className="mt-4 text-xs text-slate-400 space-y-1">
-              <div>Driver: {debugInfo.resolvedDriver || '--'}</div>
-              <div>Trip: {debugInfo.resolvedTrip || '--'}</div>
-              <div>Stops: {debugInfo.stopsCount ?? '--'}</div>
-              <div>Completed Stops: {debugInfo.completedStops ?? '--'}</div>
+        .delivery-root {
+          font-family: 'Sora', sans-serif;
+          background: hsl(var(--background));
+          min-height: 100vh;
+          padding: 0;
+          color: hsl(var(--foreground));
+          position: relative;
+          overflow-x: hidden;
+        }
+
+        .delivery-root::before {
+          content: '';
+          position: fixed;
+          top: -200px;
+          right: -200px;
+          width: 600px;
+          height: 600px;
+          background: radial-gradient(circle, hsl(var(--primary) / 0.12) 0%, transparent 70%);
+          pointer-events: none;
+          z-index: 0;
+        }
+
+        .delivery-root::after {
+          content: '';
+          position: fixed;
+          bottom: -150px;
+          left: -150px;
+          width: 500px;
+          height: 500px;
+          background: radial-gradient(circle, hsl(var(--primary) / 0.08) 0%, transparent 70%);
+          pointer-events: none;
+          z-index: 0;
+        }
+
+        .delivery-content { position: relative; z-index: 1; max-width: 960px; margin: 0 auto; }
+
+        .delivery-hero {
+          background: linear-gradient(135deg, hsl(var(--card)) 0%, hsl(var(--secondary)) 100%);
+          border: 1px solid hsl(var(--primary) / 0.2);
+          border-radius: 20px;
+          padding: 24px;
+          display: flex;
+          align-items: center;
+          gap: 16px;
+          position: relative;
+          overflow: hidden;
+          margin-bottom: 16px;
+          opacity: 0;
+          transform: translateY(16px);
+          animation: deliveryFadeUp 0.5s ease forwards;
+        }
+
+        .delivery-hero::before {
+          content: '';
+          position: absolute;
+          top: 0; left: 0; right: 0;
+          height: 1px;
+          background: linear-gradient(90deg, transparent, hsl(var(--primary) / 0.5), transparent);
+        }
+
+        .delivery-icon {
+          width: 46px;
+          height: 46px;
+          border-radius: 12px;
+          background: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary) / 0.8));
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          box-shadow: 0 0 0 3px hsl(var(--primary) / 0.25);
+          flex-shrink: 0;
+        }
+
+        .delivery-title { font-size: 20px; font-weight: 700; color: hsl(var(--foreground)); }
+        .delivery-sub { font-size: 12px; color: hsl(var(--muted-foreground)); margin-top: 4px; }
+
+        .delivery-card {
+          background: hsl(var(--card));
+          border: 1px solid hsl(var(--border));
+          border-radius: 16px;
+          overflow: hidden;
+          opacity: 0;
+          transform: translateY(14px);
+          animation: deliveryFadeUp 0.5s ease 0.1s forwards;
+        }
+
+        @keyframes deliveryFadeUp {
+          to { opacity: 1; transform: translateY(0); }
+        }
+
+        .delivery-header {
+          padding: 16px 20px;
+          border-bottom: 1px solid hsl(var(--border));
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+        }
+
+        .delivery-header-title {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          font-size: 14px;
+          font-weight: 600;
+          color: hsl(var(--foreground));
+        }
+
+        .delivery-count { font-size: 12px; color: hsl(var(--muted-foreground)); }
+
+        .delivery-row {
+          padding: 16px 20px;
+          display: flex;
+          align-items: flex-start;
+          gap: 14px;
+          border-bottom: 1px solid hsl(var(--border) / 0.6);
+        }
+        .delivery-row:last-child { border-bottom: none; }
+
+        .delivery-badge {
+          width: 38px;
+          height: 38px;
+          border-radius: 10px;
+          background: hsl(var(--primary) / 0.12);
+          border: 1px solid hsl(var(--primary) / 0.25);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: hsl(var(--primary));
+          flex-shrink: 0;
+        }
+
+        .delivery-name { font-size: 14px; font-weight: 600; color: hsl(var(--foreground)); }
+        .delivery-text { font-size: 12px; color: hsl(var(--muted-foreground)); margin-top: 2px; }
+        .delivery-meta { font-size: 11px; color: hsl(var(--muted-foreground)); margin-top: 4px; }
+
+        .delivery-right { margin-left: auto; text-align: right; }
+        .delivery-status { font-size: 12px; font-weight: 600; color: hsl(var(--primary)); }
+        .delivery-time { font-size: 11px; color: hsl(var(--muted-foreground)); margin-top: 4px; }
+
+        .delivery-empty {
+          padding: 40px 20px;
+          text-align: center;
+          color: hsl(var(--muted-foreground));
+          font-size: 12px;
+        }
+        .delivery-debug { margin-top: 12px; font-size: 11px; color: hsl(var(--muted-foreground)); }
+      `}</style>
+
+      <div className="delivery-root">
+        <div className="delivery-content">
+          <div className="delivery-hero">
+            <div className="delivery-icon">
+              <CheckCircle className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <div className="delivery-title">Completed Deliveries</div>
+              <div className="delivery-sub">History of completed delivery logs</div>
             </div>
           </div>
-        ) : logs.length > 0 ? (
-          <div className="divide-y divide-slate-100">
-            {logs.map((log) => (
-              <div key={log.name} className="px-6 py-4 flex items-start gap-4">
-                <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center text-green-700 text-sm font-semibold">
-                  <CheckCircle className="w-5 h-5" />
-                </div>
-                <div className="flex-1">
-                  <p className="font-medium text-slate-800">{log.customer || 'Customer'}</p>
-                  <p className="text-sm text-slate-500">{log.address || '--'}</p>
-                  <p className="text-xs text-slate-400 mt-1">
-                    Trip: {log.delivery_trip || '--'} - Vehicle: {log.vehicle || '--'}
-                  </p>
-                  {log.total_time_of_completion && (
-                    <p className="text-xs text-slate-400 mt-1">
-                      Duration: {log.total_time_of_completion}
-                    </p>
-                  )}
-                </div>
-                <div className="text-right">
-                  <p className="text-sm font-semibold text-green-700">Completed</p>
-                  <p className="text-xs text-slate-400">
-                    {formatDateTime(log.completed_time || log.unloading_time || log.date_and_time)}
-                  </p>
+
+          <div className="delivery-card">
+            <div className="delivery-header">
+              <div className="delivery-header-title">
+                <Package className="w-4 h-4 text-muted-foreground" />
+                Completed Logs
+              </div>
+              <span className="delivery-count">
+                {loading ? '--' : logs.length ? logs.length : completedTrips.length} total
+              </span>
+            </div>
+
+            {error ? (
+              <div className="delivery-empty" style={{ color: 'hsl(var(--destructive))' }}>{error}</div>
+            ) : loading ? (
+              <div className="delivery-empty">Loading history...</div>
+            ) : logs.length === 0 && completedTrips.length === 0 ? (
+              <div className="delivery-empty">
+                No completed deliveries yet.
+                <div className="delivery-debug">
+                  <div>Driver: {debugInfo.resolvedDriver || '--'}</div>
+                  <div>Trip: {debugInfo.resolvedTrip || '--'}</div>
+                  <div>Stops: {debugInfo.stopsCount ?? '--'}</div>
+                  <div>Completed Stops: {debugInfo.completedStops ?? '--'}</div>
                 </div>
               </div>
-            ))}
-          </div>
-        ) : (
-          <div className="divide-y divide-slate-100">
-            {completedTrips.map((trip) => (
-              <div key={trip.name} className="px-6 py-4 flex items-start gap-4">
-                <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center text-green-700 text-sm font-semibold">
-                  <CheckCircle className="w-5 h-5" />
-                </div>
-                <div className="flex-1">
-                  <p className="font-medium text-slate-800">{trip.name}</p>
-                  <p className="text-sm text-slate-500">{trip.company || '--'}</p>
-                  <p className="text-xs text-slate-400 mt-1">
-                    Vehicle: {trip.vehicle || '--'} - Driver: {trip.driver_name || trip.driver || '--'}
-                  </p>
-                </div>
-                <div className="text-right">
-                  <p className="text-sm font-semibold text-green-700">Completed</p>
-                  <p className="text-xs text-slate-400">
-                    {formatDateTime(trip.departure_time || trip.modified)}
-                  </p>
-                </div>
+            ) : logs.length > 0 ? (
+              <div>
+                {logs.map((log) => (
+                  <div key={log.name} className="delivery-row">
+                    <div className="delivery-badge">
+                      <CheckCircle className="w-4 h-4" />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div className="delivery-name">{log.customer || 'Customer'}</div>
+                      <div className="delivery-text">{log.address || '--'}</div>
+                      <div className="delivery-meta">
+                        Trip: {log.delivery_trip || '--'} - Vehicle: {log.vehicle || '--'}
+                      </div>
+                      {log.total_time_of_completion && (
+                        <div className="delivery-meta">Duration: {log.total_time_of_completion}</div>
+                      )}
+                    </div>
+                    <div className="delivery-right">
+                      <div className="delivery-status">Completed</div>
+                      <div className="delivery-time">
+                        {formatDateTime(log.completed_time || log.unloading_time || log.date_and_time)}
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
+            ) : (
+              <div>
+                {completedTrips.map((trip) => (
+                  <div key={trip.name} className="delivery-row">
+                    <div className="delivery-badge">
+                      <CheckCircle className="w-4 h-4" />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div className="delivery-name">{trip.name}</div>
+                      <div className="delivery-text">{trip.company || '--'}</div>
+                      <div className="delivery-meta">
+                        Vehicle: {trip.vehicle || '--'} - Driver: {trip.driver_name || trip.driver || '--'}
+                      </div>
+                    </div>
+                    <div className="delivery-right">
+                      <div className="delivery-status">Completed</div>
+                      <div className="delivery-time">
+                        {formatDateTime(trip.departure_time || trip.modified)}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </div>
-    </div>
+    </>
   );
 };
 

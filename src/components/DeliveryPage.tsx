@@ -138,13 +138,13 @@ const DeliveryPage: React.FC<DeliveryPageProps> = ({
   const getStatusBadge = (stop?: DeliveryStop | null) => {
     const status = getStopStatus(stop);
     if (status === 'Completed') {
-      return { label: 'Completed', className: 'text-green-700 bg-green-100' };
+      return { label: 'Completed', className: 'delivery-pill completed' };
     }
     if (status === 'Unloading') {
-      return { label: 'Unloading', className: 'text-red-700 bg-red-100' };
+      return { label: 'Unloading', className: 'delivery-pill unloading' };
     }
     const fallback = getVisitLabel(stop?.visited);
-    return { label: fallback, className: 'text-slate-700 bg-slate-100' };
+    return { label: fallback, className: 'delivery-pill pending' };
   };
 
   useEffect(() => {
@@ -561,171 +561,381 @@ const DeliveryPage: React.FC<DeliveryPageProps> = ({
   const displayNextStop = showData ? nextStop : undefined;
 
   return (
-    <div className="space-y-6">
-      <div className="bg-gradient-to-r from-emerald-600 to-teal-600 rounded-2xl p-6 text-white">
-        <div className="flex items-start justify-between">
-          <div>
-            <p className="text-emerald-100 mb-1">Welcome,</p>
-            <h1 className="text-2xl font-bold mb-2">{fullName}</h1>
-            <p className="text-emerald-100">
-              {department || 'Delivery'} - {designation || 'Delivery Driver'}
-            </p>
-          </div>
-          <div className="w-14 h-14 bg-white/15 rounded-xl flex items-center justify-center">
-            <Truck className="w-7 h-7 text-white" />
-          </div>
-        </div>
-      </div>
+    <>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-5">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="w-10 h-10 rounded-lg bg-emerald-100 flex items-center justify-center">
-              <Route className="w-5 h-5 text-emerald-600" />
-            </div>
+        .delivery-page-root {
+          font-family: 'Sora', sans-serif;
+          background: hsl(var(--background));
+          min-height: 100vh;
+          padding: 0;
+          color: hsl(var(--foreground));
+          position: relative;
+          overflow-x: hidden;
+        }
+
+        .delivery-page-root::before {
+          content: '';
+          position: fixed;
+          top: -200px;
+          right: -200px;
+          width: 600px;
+          height: 600px;
+          background: radial-gradient(circle, hsl(var(--primary) / 0.12) 0%, transparent 70%);
+          pointer-events: none;
+          z-index: 0;
+        }
+
+        .delivery-page-root::after {
+          content: '';
+          position: fixed;
+          bottom: -150px;
+          left: -150px;
+          width: 500px;
+          height: 500px;
+          background: radial-gradient(circle, hsl(var(--primary) / 0.08) 0%, transparent 70%);
+          pointer-events: none;
+          z-index: 0;
+        }
+
+        .delivery-page-content { position: relative; z-index: 1; max-width: 960px; margin: 0 auto; }
+
+        .delivery-hero {
+          background: linear-gradient(135deg, hsl(var(--card)) 0%, hsl(var(--secondary)) 100%);
+          border: 1px solid hsl(var(--primary) / 0.2);
+          border-radius: 20px;
+          padding: 24px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 20px;
+          position: relative;
+          overflow: hidden;
+          margin-bottom: 16px;
+          opacity: 0;
+          transform: translateY(16px);
+          animation: deliveryPageFadeUp 0.5s ease forwards;
+        }
+
+        .delivery-hero::before {
+          content: '';
+          position: absolute;
+          top: 0; left: 0; right: 0;
+          height: 1px;
+          background: linear-gradient(90deg, transparent, hsl(var(--primary) / 0.5), transparent);
+        }
+
+        .delivery-hero-tag { color: hsl(var(--muted-foreground)); font-size: 12px; margin-bottom: 4px; }
+        .delivery-hero-title { font-size: 22px; font-weight: 700; color: hsl(var(--foreground)); margin-bottom: 6px; }
+        .delivery-hero-sub { font-size: 12px; color: hsl(var(--muted-foreground)); }
+
+        .delivery-hero-icon {
+          width: 56px;
+          height: 56px;
+          border-radius: 14px;
+          background: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary) / 0.8));
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          box-shadow: 0 0 0 3px hsl(var(--primary) / 0.25);
+          flex-shrink: 0;
+        }
+
+        .delivery-stats-grid {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 14px;
+          margin-bottom: 18px;
+        }
+        @media (max-width: 1024px) { .delivery-stats-grid { grid-template-columns: 1fr; } }
+
+        .delivery-stat-card {
+          background: hsl(var(--card));
+          border: 1px solid hsl(var(--border));
+          border-radius: 16px;
+          padding: 20px;
+          opacity: 0;
+          transform: translateY(12px);
+          animation: deliveryPageFadeUp 0.5s ease 0.1s forwards;
+        }
+        .delivery-stat-card:nth-child(2) { animation-delay: 0.15s; }
+        .delivery-stat-card:nth-child(3) { animation-delay: 0.2s; }
+
+        .stat-icon {
+          width: 40px;
+          height: 40px;
+          border-radius: 10px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: hsl(var(--foreground) / 0.06);
+          border: 1px solid hsl(var(--border));
+          flex-shrink: 0;
+        }
+
+        .stat-label { font-size: 12px; color: hsl(var(--muted-foreground)); }
+        .stat-value { font-size: 16px; font-weight: 600; color: hsl(var(--foreground)); margin-top: 4px; }
+        .stat-sub { font-size: 11px; color: hsl(var(--muted-foreground)); margin-top: 8px; }
+
+        .stat-btn {
+          margin-top: 12px;
+          width: 100%;
+          background: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary) / 0.85));
+          color: white;
+          border: none;
+          border-radius: 10px;
+          padding: 10px 12px;
+          font-size: 12px;
+          font-weight: 600;
+          cursor: pointer;
+          transition: opacity 0.2s, transform 0.15s;
+        }
+        .stat-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .stat-btn:hover { opacity: 0.9; transform: translateY(-1px); }
+
+        .delivery-list-card {
+          background: hsl(var(--card));
+          border: 1px solid hsl(var(--border));
+          border-radius: 16px;
+          overflow: hidden;
+          opacity: 0;
+          transform: translateY(12px);
+          animation: deliveryPageFadeUp 0.5s ease 0.25s forwards;
+        }
+
+        .delivery-list-header {
+          padding: 16px 20px;
+          border-bottom: 1px solid hsl(var(--border));
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+        }
+
+        .delivery-list-title {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          font-size: 14px;
+          font-weight: 600;
+          color: hsl(var(--foreground));
+        }
+
+        .delivery-list-count { font-size: 12px; color: hsl(var(--muted-foreground)); }
+
+        .delivery-row {
+          width: 100%;
+          text-align: left;
+          padding: 16px 20px;
+          display: flex;
+          align-items: center;
+          gap: 14px;
+          border-bottom: 1px solid hsl(var(--border) / 0.6);
+          transition: background 0.15s;
+        }
+        .delivery-row:hover { background: hsl(var(--foreground) / 0.02); }
+        .delivery-row:last-child { border-bottom: none; }
+
+        .delivery-index {
+          width: 38px;
+          height: 38px;
+          border-radius: 10px;
+          background: hsl(var(--foreground) / 0.06);
+          border: 1px solid hsl(var(--border));
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: hsl(var(--muted-foreground));
+          font-size: 12px;
+          font-weight: 600;
+          flex-shrink: 0;
+        }
+
+        .delivery-name { font-size: 14px; font-weight: 600; color: hsl(var(--foreground)); }
+        .delivery-text { font-size: 12px; color: hsl(var(--muted-foreground)); margin-top: 3px; }
+        .delivery-sub { font-size: 11px; color: hsl(var(--muted-foreground)); margin-top: 4px; }
+
+        .delivery-pill {
+          display: inline-flex;
+          align-items: center;
+          border-radius: 999px;
+          padding: 2px 8px;
+          font-size: 11px;
+          font-weight: 600;
+          border: 1px solid transparent;
+        }
+        .delivery-pill.completed { background: hsl(var(--primary) / 0.12); color: hsl(var(--primary)); border-color: hsl(var(--primary) / 0.25); }
+        .delivery-pill.unloading { background: hsl(var(--destructive) / 0.12); color: hsl(var(--destructive)); border-color: hsl(var(--destructive) / 0.25); }
+        .delivery-pill.pending { background: hsl(var(--muted-foreground) / 0.12); color: hsl(var(--muted-foreground)); border-color: hsl(var(--muted-foreground) / 0.25); }
+
+        .delivery-empty {
+          padding: 32px 20px;
+          text-align: center;
+          font-size: 12px;
+          color: hsl(var(--muted-foreground));
+        }
+
+        @keyframes deliveryPageFadeUp {
+          to { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
+
+      <div className="delivery-page-root">
+        <div className="delivery-page-content space-y-6">
+          <div className="delivery-hero">
             <div>
-              <p className="text-slate-500 text-sm">Today's Route</p>
-              <p className="font-semibold text-slate-800">
-                {loading ? 'Loading...' : displayTripName}
-              </p>
+              <div className="delivery-hero-tag">Welcome,</div>
+              <div className="delivery-hero-title">{fullName}</div>
+              <div className="delivery-hero-sub">
+                {department || 'Delivery'} - {designation || 'Delivery Driver'}
+              </div>
+            </div>
+            <div className="delivery-hero-icon">
+              <Truck className="w-6 h-6 text-white" />
             </div>
           </div>
-          <div className="flex items-center justify-between text-sm text-slate-500">
-            <span>Stops: {loading ? '--' : displayTotalStops}</span>
-            <span>Completed: {loading ? '--' : displayCompletedStops}</span>
-          </div>
-          <p className="text-xs text-slate-400 mt-3">
-            Shift: {showData ? (trip?.departure_time || '--:--') : '--:--'} to --:--
-          </p>
-        </div>
 
-        <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-5">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
-              <MapPin className="w-5 h-5 text-blue-600" />
+          <div className="delivery-stats-grid">
+            <div className="delivery-stat-card">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="stat-icon">
+                  <Route className="w-4 h-4 text-emerald-400" />
+                </div>
+                <div>
+                  <div className="stat-label">Today's Route</div>
+                  <div className="stat-value">{loading ? 'Loading...' : displayTripName}</div>
+                </div>
+              </div>
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span>Stops: {loading ? '--' : displayTotalStops}</span>
+                <span>Completed: {loading ? '--' : displayCompletedStops}</span>
+              </div>
+              <div className="stat-sub">
+                Shift: {showData ? (trip?.departure_time || '--:--') : '--:--'} to --:--
+              </div>
             </div>
-            <div>
-              <p className="text-slate-500 text-sm">Next Stop</p>
-              <p className="font-semibold text-slate-800">
-                {loading
-                  ? 'Loading...'
-                  : displayNextStop?.customer || displayNextStop?.address || 'No upcoming stop'}
-              </p>
-            </div>
-          </div>
-          <p className="text-sm text-slate-500">
-            Address: {loading ? '--' : displayNextStop?.address || '--'}
-          </p>
-          <p className="text-sm text-slate-500">
-            ETA: {loading ? '--' : displayNextStop?.estimated_arrival || '--'}
-          </p>
-          <button
-            type="button"
-            disabled={displayStops.length === 0}
-            onClick={handleNavigate}
-            className="mt-4 w-full bg-blue-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
-          >
-            Navigate
-          </button>
-        </div>
 
-        <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-5">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="w-10 h-10 rounded-lg bg-amber-100 flex items-center justify-center">
-              <Package className="w-5 h-5 text-amber-600" />
-            </div>
-            <div>
-              <p className="text-slate-500 text-sm">Assigned Deliveries</p>
-              <p className="font-semibold text-slate-800">
-                {loading ? '--' : displayTotalStops} packages
-              </p>
-            </div>
-          </div>
-          <p className="text-sm text-slate-500">
-            {displayCompany} - {displayLocation}
-          </p>
-          <p className="text-xs text-slate-400 mt-3">
-            {loading ? 'Loading assignments...' : displayTotalStops ? 'Assignments loaded.' : 'Awaiting assignments.'}
-          </p>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
-        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Package className="w-5 h-5 text-slate-400" />
-            <h2 className="font-semibold text-slate-800">Assigned Deliveries</h2>
-          </div>
-          <span className="text-sm text-slate-500">{loading ? '--' : displayTotalStops} total</span>
-        </div>
-        {error ? (
-          <div className="px-6 py-10 text-center text-red-600 text-sm">{error}</div>
-        ) : loading ? (
-          <div className="px-6 py-10 text-center text-slate-500 text-sm">Loading deliveries...</div>
-        ) : displayTotalStops === 0 ? (
-          <div className="px-6 py-10 text-center text-slate-500 text-sm">
-            No deliveries assigned yet.
-          </div>
-        ) : (
-          <div className="divide-y divide-slate-100">
-            {displayStops.map((stop, index) => (
+            <div className="delivery-stat-card">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="stat-icon">
+                  <MapPin className="w-4 h-4 text-blue-400" />
+                </div>
+                <div>
+                  <div className="stat-label">Next Stop</div>
+                  <div className="stat-value">
+                    {loading
+                      ? 'Loading...'
+                      : displayNextStop?.customer || displayNextStop?.address || 'No upcoming stop'}
+                  </div>
+                </div>
+              </div>
+              <div className="text-xs text-muted-foreground">
+                Address: {loading ? '--' : displayNextStop?.address || '--'}
+              </div>
+              <div className="text-xs text-muted-foreground">
+                ETA: {loading ? '--' : displayNextStop?.estimated_arrival || '--'}
+              </div>
               <button
-                key={stop.name}
                 type="button"
-                onClick={() => openUnloadingModal(stop)}
-                className="w-full text-left px-6 py-4 flex items-center gap-4 hover:bg-slate-50 transition-colors"
+                disabled={displayStops.length === 0}
+                onClick={handleNavigate}
+                className="stat-btn"
               >
-                <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center text-slate-600 text-sm font-semibold">
-                  {index + 1}
-                </div>
-                <div className="flex-1">
-                  <p className="font-medium text-slate-800">{stop.customer || stop.address || 'Delivery Stop'}</p>
-                  <p className="text-sm text-slate-500">{stop.address || '--'}</p>
-                  {stop.customer_address && (
-                    <p className="text-xs text-slate-400">
-                      {truncateText(normalizeAddress(stop.customer_address), 90)}
-                    </p>
-                  )}
-                </div>
-                <div className="text-right">
-                  <span
-                    className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${getStatusBadge(stop).className}`}
-                  >
-                    {getStatusBadge(stop).label}
-                  </span>
-                  <p className="text-xs text-slate-400 mt-1">ETA {stop.estimated_arrival || '--'}</p>
-                </div>
+                Navigate
               </button>
-            ))}
-          </div>
-        )}
-      </div>
+            </div>
 
-      {showRoute && showData && (
-        <DeliveryRouteMap
-          stops={stops}
-          routeGeojson={trip?.custom_route_geojson}
-          startLabel={trip?.custom_location || customLocation}
-          startLatitude={trip?.latitude}
-          startLongitude={trip?.longitude}
-          onOpenGoogleMaps={handleOpenGoogleMaps}
-          completedStopKeys={new Set(
-            stops
-              .filter((stop) => getStopStatus(stop) === 'Completed')
-              .map((stop) => stop.name)
+            <div className="delivery-stat-card">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="stat-icon">
+                  <Package className="w-4 h-4 text-amber-400" />
+                </div>
+                <div>
+                  <div className="stat-label">Assigned Deliveries</div>
+                  <div className="stat-value">{loading ? '--' : displayTotalStops} packages</div>
+                </div>
+              </div>
+              <div className="text-xs text-muted-foreground">
+                {displayCompany} - {displayLocation}
+              </div>
+              <div className="stat-sub">
+                {loading ? 'Loading assignments...' : displayTotalStops ? 'Assignments loaded.' : 'Awaiting assignments.'}
+              </div>
+            </div>
+          </div>
+
+          <div className="delivery-list-card">
+            <div className="delivery-list-header">
+              <div className="delivery-list-title">
+                <Package className="w-4 h-4 text-muted-foreground" />
+                Assigned Deliveries
+              </div>
+              <span className="delivery-list-count">{loading ? '--' : displayTotalStops} total</span>
+            </div>
+            {error ? (
+              <div className="delivery-empty" style={{ color: 'hsl(var(--destructive))' }}>{error}</div>
+            ) : loading ? (
+              <div className="delivery-empty">Loading deliveries...</div>
+            ) : displayTotalStops === 0 ? (
+              <div className="delivery-empty">No deliveries assigned yet.</div>
+            ) : (
+              <div>
+                {displayStops.map((stop, index) => (
+                  <button
+                    key={stop.name}
+                    type="button"
+                    onClick={() => openUnloadingModal(stop)}
+                    className="delivery-row"
+                  >
+                    <div className="delivery-index">{index + 1}</div>
+                    <div style={{ flex: 1 }}>
+                      <div className="delivery-name">{stop.customer || stop.address || 'Delivery Stop'}</div>
+                      <div className="delivery-text">{stop.address || '--'}</div>
+                      {stop.customer_address && (
+                        <div className="delivery-sub">
+                          {truncateText(normalizeAddress(stop.customer_address), 90)}
+                        </div>
+                      )}
+                    </div>
+                    <div className="text-right">
+                      <span className={getStatusBadge(stop).className}>
+                        {getStatusBadge(stop).label}
+                      </span>
+                      <div className="delivery-sub">ETA {stop.estimated_arrival || '--'}</div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {showRoute && showData && (
+            <DeliveryRouteMap
+              stops={stops}
+              routeGeojson={trip?.custom_route_geojson}
+              startLabel={trip?.custom_location || customLocation}
+              startLatitude={trip?.latitude}
+              startLongitude={trip?.longitude}
+              onOpenGoogleMaps={handleOpenGoogleMaps}
+              completedStopKeys={new Set(
+                stops
+                  .filter((stop) => getStopStatus(stop) === 'Completed')
+                  .map((stop) => stop.name)
+              )}
+            />
           )}
-        />
-      )}
+        </div>
+      </div>
 
       <Dialog open={isUnloadingOpen} onOpenChange={setIsUnloadingOpen}>
-        <DialogContent>
+        <DialogContent className="w-[92vw] max-w-sm bg-card text-foreground border border-border rounded-2xl shadow-2xl p-5">
           <DialogHeader>
-            <DialogTitle>Unload Delivery</DialogTitle>
-            <DialogDescription>
+            <DialogTitle className="text-foreground">Unload Delivery</DialogTitle>
+            <DialogDescription className="text-muted-foreground">
               {selectedStop?.customer || selectedStop?.address || 'Delivery Stop'}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3 text-sm text-slate-600">
+          <div className="space-y-3 text-sm text-muted-foreground">
             <p>
               Address: {selectedStop?.customer_address
                 ? normalizeAddress(selectedStop.customer_address)
@@ -736,22 +946,22 @@ const DeliveryPage: React.FC<DeliveryPageProps> = ({
               Status:{' '}
               {getStopStatus(selectedStop) || getVisitLabel(selectedStop?.visited)}
             </p>
-            <p className={`text-xs ${radiusCheck.allowed ? 'text-green-600' : 'text-red-600'}`}>
+            <p className={`text-xs ${radiusCheck.allowed ? 'text-foreground' : 'text-destructive'}`}>
               {radiusCheck.checking
                 ? 'Checking distance...'
                 : radiusCheck.message || 'Location check required.'}
             </p>
             {getStopStatus(selectedStop) === 'Unloading' && (
-              <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <div className="mt-4 rounded-xl border border-border bg-muted p-4">
                 <div className="flex items-center justify-between gap-3">
                   <div>
-                    <p className="font-medium text-slate-700">Delivery proof</p>
-                    <p className="text-xs text-slate-500">Capture a photo before completing.</p>
+                    <p className="font-medium text-foreground">Delivery proof</p>
+                    <p className="text-xs text-muted-foreground">Capture a photo before completing.</p>
                   </div>
                   <button
                     type="button"
                     onClick={handleProofCapture}
-                    className="inline-flex items-center gap-2 rounded-lg bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200 hover:bg-slate-100"
+                    className="inline-flex items-center gap-2 rounded-lg bg-secondary px-3 py-2 text-xs font-semibold text-foreground shadow-sm ring-1 ring-border hover:bg-secondary/80"
                   >
                     <Camera className="h-4 w-4" />
                     {proofImage ? 'Retake' : 'Open Camera'}
@@ -773,7 +983,7 @@ const DeliveryPage: React.FC<DeliveryPageProps> = ({
                       className="h-40 w-full rounded-lg object-cover"
                     />
                     {proofFilename && (
-                      <p className="mt-2 text-xs text-slate-500">{proofFilename}</p>
+                      <p className="mt-2 text-xs text-muted-foreground">{proofFilename}</p>
                     )}
                   </div>
                 )}
@@ -784,7 +994,7 @@ const DeliveryPage: React.FC<DeliveryPageProps> = ({
             <Button
               variant="outline"
               onClick={() => setIsUnloadingOpen(false)}
-              className="w-full sm:w-auto"
+              className="w-full sm:w-auto rounded-xl border border-border bg-secondary text-foreground hover:bg-secondary/80"
             >
               Cancel
             </Button>
@@ -800,7 +1010,7 @@ const DeliveryPage: React.FC<DeliveryPageProps> = ({
                 !hasStopCoordinates(selectedStop) ||
                 !radiusCheck.allowed
               }
-              className="w-full sm:w-auto"
+              className="w-full sm:w-auto rounded-xl border border-destructive/30 bg-destructive/15 text-destructive hover:bg-destructive/25"
             >
               {isUnloadingSubmitting
                 ? 'Saving...'
@@ -815,7 +1025,7 @@ const DeliveryPage: React.FC<DeliveryPageProps> = ({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </>
   );
 };
 
