@@ -122,6 +122,7 @@ const Dashboard: React.FC<DashboardProps> = ({ employee, latestCheckin, recentCh
           opacity: 0;
           transform: translateY(16px);
           animation: fadeUp 0.5s ease forwards;
+          flex-wrap: wrap;
         }
         @media (max-width: 640px) {
           .hero-card {
@@ -161,13 +162,24 @@ const Dashboard: React.FC<DashboardProps> = ({ employee, latestCheckin, recentCh
           box-shadow: 0 0 0 3px hsl(var(--primary) / 0.25);
         }
 
-        .hero-name { font-size: 22px; font-weight: 700; color: hsl(var(--foreground)); margin-bottom: 4px; }
-        .hero-meta { font-size: 13px; color: hsl(var(--muted-foreground)); }
+        .hero-left { display: flex; align-items: center; gap: 16px; flex: 1 1 280px; min-width: 0; }
+        .hero-info { min-width: 0; }
+        .hero-name {
+          font-size: 22px; font-weight: 700; color: hsl(var(--foreground)); margin-bottom: 4px;
+          display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline;
+          word-break: break-word;
+        }
+        .hero-meta {
+          font-size: 13px; color: hsl(var(--muted-foreground));
+          display: flex; flex-wrap: wrap; gap: 6px;
+          word-break: break-word;
+        }
         .hero-meta span { color: hsl(var(--muted-foreground)); }
 
         .live-clock {
           text-align: right;
           font-family: 'JetBrains Mono', monospace;
+          flex: 0 0 auto;
         }
         .clock-time { font-size: 28px; font-weight: 500; color: hsl(var(--foreground)); letter-spacing: -1px; }
         .clock-date { font-size: 12px; color: hsl(var(--muted-foreground)); margin-top: 4px; }
@@ -181,6 +193,7 @@ const Dashboard: React.FC<DashboardProps> = ({ employee, latestCheckin, recentCh
           margin-top: 10px;
           background: hsl(var(--foreground) / 0.04);
           border: 1px solid hsl(var(--border));
+          flex-wrap: wrap;
         }
         .status-dot {
           width: 7px; height: 7px;
@@ -357,7 +370,7 @@ const Dashboard: React.FC<DashboardProps> = ({ employee, latestCheckin, recentCh
           background: hsl(var(--primary) / 0.15);
           color: hsl(var(--primary));
           border: 1px solid hsl(var(--primary) / 0.2);
-          margin-left: 8px;
+          margin-left: 0;
         }
       `}</style>
 
@@ -367,16 +380,16 @@ const Dashboard: React.FC<DashboardProps> = ({ employee, latestCheckin, recentCh
           {/* Hero */}
           <div className="hero-card">
             <div className="hero-glow" />
-            <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+            <div className="hero-left">
               <div className="avatar">{initials}</div>
-              <div>
+              <div className="hero-info">
                 <div className="hero-name">
                   {employee.full_name}
                   <span className="badge">#{employee.id || 'EMP'}</span>
                 </div>
                 <div className="hero-meta">
                   <span>{employee.department}</span>
-                  {employee.designation && <> · <span>{employee.designation}</span></>}
+                  {employee.designation && <span> · {employee.designation}</span>}
                 </div>
                 <div
                   className="status-pill"

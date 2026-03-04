@@ -58,6 +58,16 @@ type DeliveryTrip = {
   longitude?: number;
 };
 
+type PendingDeliveryAction = {
+  id: string;
+  employeeId: string;
+  tripName: string;
+  stopName: string;
+  status: 'Unloading' | 'Completed';
+  payload: Record<string, unknown>;
+  timestamp: string;
+};
+
 const getVisitLabel = (visited?: number | boolean) => {
   if (visited === true || visited === 1) return 'Delivered';
   if (visited === false || visited === 0) return 'Pending';
@@ -84,6 +94,7 @@ const asRecord = (value: unknown): Record<string, unknown> => {
 const readString = (value: unknown) => (typeof value === 'string' ? value : undefined);
 
 const DEFAULT_GEOFENCE_RADIUS_METERS = 150;
+const DELIVERY_PENDING_KEY = 'pending_delivery_actions_v1';
 
 const isFiniteNumber = (value?: number) => Number.isFinite(value);
 
@@ -98,6 +109,48 @@ const getDistanceMeters = (lat1: number, lon1: number, lat2: number, lon2: numbe
     Math.cos(toRadians(lat1)) * Math.cos(toRadians(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return earthRadiusMeters * c;
+};
+
+const loadPendingDeliveryActions = (): PendingDeliveryAction[] => {
+  try {
+    const raw = localStorage.getItem(DELIVERY_PENDING_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as PendingDeliveryAction[]) : [];
+  } catch {
+    return [];
+  }
+};
+
+const savePendingDeliveryActions = (items: PendingDeliveryAction[]) => {
+  try {
+    localStorage.setItem(DELIVERY_PENDING_KEY, JSON.stringify(items));
+  } catch {
+    // ignore storage failures
+  }
+};
+
+const compressImageDataUrl = async (dataUrl: string, maxWidth = 1600, quality = 0.85) => {
+  return new Promise<string>((resolve) => {
+    try {
+      const img = new Image();
+      img.onload = () => {
+        const scale = Math.min(1, maxWidth / img.width);
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(img.width * scale));
+        canvas.height = Math.max(1, Math.round(img.height * scale));
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return resolve(dataUrl);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        const out = canvas.toDataURL('image/jpeg', quality);
+        resolve(out || dataUrl);
+      };
+      img.onerror = () => resolve(dataUrl);
+      img.src = dataUrl;
+    } catch {
+      resolve(dataUrl);
+    }
+  });
 };
 
 const DeliveryPage: React.FC<DeliveryPageProps> = ({
@@ -116,6 +169,8 @@ const DeliveryPage: React.FC<DeliveryPageProps> = ({
   const [selectedStop, setSelectedStop] = useState<DeliveryStop | null>(null);
   const [isUnloadingOpen, setIsUnloadingOpen] = useState(false);
   const [isUnloadingSubmitting, setIsUnloadingSubmitting] = useState(false);
+  const [isOnline, setIsOnline] = useState(true);
+  const [syncBanner, setSyncBanner] = useState<string | null>(null);
   const [statusByStop, setStatusByStop] = useState<Map<string, string>>(new Map());
   const [proofImage, setProofImage] = useState<string | null>(null);
   const [proofFilename, setProofFilename] = useState<string | null>(null);
@@ -126,6 +181,7 @@ const DeliveryPage: React.FC<DeliveryPageProps> = ({
     message?: string;
   }>({ checking: false, allowed: false });
   const proofInputRef = useRef<HTMLInputElement>(null);
+  const syncingRef = useRef(false);
 
   const stopKey = (stop?: DeliveryStop | null) =>
     stop?.name || `${stop?.customer || ''}||${normalizeAddress(stop?.customer_address || stop?.address || '')}`;
@@ -238,7 +294,12 @@ const DeliveryPage: React.FC<DeliveryPageProps> = ({
           const status = String(readString(item.status) || '').trim();
           if (key && status) map.set(key, status);
         });
-        if (alive) setStatusByStop(map);
+        if (alive) {
+          const pending = loadPendingDeliveryActions()
+            .filter((item) => item.employeeId === employeeId && item.tripName === trip.name);
+          pending.forEach((item) => map.set(item.stopName, item.status));
+          setStatusByStop(map);
+        }
       } catch {
         if (alive) setStatusByStop(new Map());
       }
@@ -248,6 +309,69 @@ const DeliveryPage: React.FC<DeliveryPageProps> = ({
       alive = false;
     };
   }, [trip?.name]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const updateOnline = () => setIsOnline(navigator.onLine);
+    updateOnline();
+    window.addEventListener('online', updateOnline);
+    window.addEventListener('offline', updateOnline);
+    return () => {
+      window.removeEventListener('online', updateOnline);
+      window.removeEventListener('offline', updateOnline);
+    };
+  }, []);
+
+  const syncPendingDeliveryActions = React.useCallback(async () => {
+    if (!isOnline || syncingRef.current) return;
+    syncingRef.current = true;
+    try {
+      const pending = loadPendingDeliveryActions();
+      if (pending.length === 0) return;
+      setSyncBanner(`Syncing ${pending.length} delivery update${pending.length === 1 ? '' : 's'}...`);
+      const remaining: PendingDeliveryAction[] = [];
+      let syncedCount = 0;
+      for (const action of pending) {
+        try {
+          if (action.status === 'Unloading') {
+            await erpRequest(
+              '/api/method/route_optimizer.api.delivery_monitoring.create_delivery_monitoring',
+              {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: action.payload,
+              }
+            );
+          } else {
+            await erpRequest(
+              '/api/method/route_optimizer.api.delivery_monitoring.complete_delivery_with_proof',
+              {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: action.payload,
+              }
+            );
+          }
+          syncedCount += 1;
+        } catch {
+          remaining.push(action);
+        }
+      }
+      savePendingDeliveryActions(remaining);
+      if (syncedCount > 0) {
+        setSyncBanner(`Synced ${syncedCount} delivery update${syncedCount === 1 ? '' : 's'}.`);
+        setTimeout(() => setSyncBanner(null), 2000);
+      } else {
+        setSyncBanner(null);
+      }
+    } finally {
+      syncingRef.current = false;
+    }
+  }, [isOnline]);
+
+  useEffect(() => {
+    void syncPendingDeliveryActions();
+  }, [syncPendingDeliveryActions]);
 
   const nextStop = useMemo(() => {
     return stops.find((stop) => {
@@ -397,29 +521,50 @@ const DeliveryPage: React.FC<DeliveryPageProps> = ({
     setIsUnloadingSubmitting(true);
     try {
       const { latitude, longitude, address } = await resolveLocationForStop(selectedStop);
+      const payload = {
+        delivery_trip: trip.name,
+        delivery_stop: selectedStop.name,
+        status: 'Unloading',
+        driver: trip.driver,
+        vehicle: trip.vehicle,
+        customer: selectedStop.customer,
+        address,
+        latitude,
+        longitude,
+      };
+
+      if (!isOnline) {
+        const pendingItem: PendingDeliveryAction = {
+          id: `DELIV-${Date.now()}`,
+          employeeId,
+          tripName: trip.name || '',
+          stopName: selectedStop.name,
+          status: 'Unloading',
+          payload,
+          timestamp: new Date().toISOString(),
+        };
+        const pending = loadPendingDeliveryActions();
+        savePendingDeliveryActions([pendingItem, ...pending]);
+
+        const updated = new Map(statusByStop);
+        updated.set(stopKey(selectedStop), 'Unloading');
+        setStatusByStop(updated);
+        toast.success('Marked as unloading offline. Will sync when online.');
+        return;
+      }
 
       const res = await erpRequest(
         '/api/method/route_optimizer.api.delivery_monitoring.create_delivery_monitoring',
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: {
-            delivery_trip: trip.name,
-            delivery_stop: selectedStop.name,
-            status: 'Unloading',
-            driver: trip.driver,
-            vehicle: trip.vehicle,
-            customer: selectedStop.customer,
-            address,
-            latitude,
-            longitude,
-          },
+          body: payload,
         }
       );
 
-      const payload = res.data?.message ?? res.data;
-      if (!res.ok || payload?.success === false) {
-        throw new Error(extractErrorMessage(payload, 'Unable to save delivery log'));
+      const responsePayload = res.data?.message ?? res.data;
+      if (!res.ok || responsePayload?.success === false) {
+        throw new Error(extractErrorMessage(responsePayload, 'Unable to save delivery log'));
       }
 
       const updated = new Map(statusByStop);
@@ -458,30 +603,58 @@ const DeliveryPage: React.FC<DeliveryPageProps> = ({
     setIsUnloadingSubmitting(true);
     try {
       const { latitude, longitude, address } = await resolveLocationForStop(selectedStop);
+      const compressedProof = proofImage
+        ? await compressImageDataUrl(proofImage)
+        : proofImage;
+      const payload = {
+        delivery_trip: trip.name,
+        delivery_stop: selectedStop.name,
+        status: 'Completed',
+        driver: trip.driver,
+        vehicle: trip.vehicle,
+        customer: selectedStop.customer,
+        address,
+        latitude,
+        longitude,
+        proof_image: compressedProof,
+        proof_filename: proofFilename,
+      };
+
+      if (!isOnline) {
+        const pendingItem: PendingDeliveryAction = {
+          id: `DELIV-${Date.now()}`,
+          employeeId,
+          tripName: trip.name || '',
+          stopName: selectedStop.name,
+          status: 'Completed',
+          payload,
+          timestamp: new Date().toISOString(),
+        };
+        const pending = loadPendingDeliveryActions();
+        savePendingDeliveryActions([pendingItem, ...pending]);
+
+        const updated = new Map(statusByStop);
+        updated.set(stopKey(selectedStop), 'Completed');
+        setStatusByStop(updated);
+        toast.success('Delivery completed offline. Will sync when online.');
+        setIsUnloadingOpen(false);
+        setProofImage(null);
+        setProofFilename(null);
+        return;
+      }
+
       const res = await erpRequest(
         '/api/method/route_optimizer.api.delivery_monitoring.complete_delivery_with_proof',
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: {
-            delivery_trip: trip.name,
-            delivery_stop: selectedStop.name,
-            status: 'Completed',
-            driver: trip.driver,
-            vehicle: trip.vehicle,
-            customer: selectedStop.customer,
-            address,
-            latitude,
-            longitude,
-            proof_image: proofImage,
-            proof_filename: proofFilename,
-          },
+          body: payload,
         }
       );
 
-      const payload = res.data?.message ?? res.data;
-      if (!res.ok || payload?.success === false) {
-        throw new Error(extractErrorMessage(payload, 'Unable to complete delivery'));
+      const responsePayload = res.data?.message ?? res.data;
+      if (!res.ok || responsePayload?.success === false) {
+        throw new Error(extractErrorMessage(responsePayload, 'Unable to complete delivery'));
       }
 
       const updated = new Map(statusByStop);
@@ -574,6 +747,23 @@ const DeliveryPage: React.FC<DeliveryPageProps> = ({
           position: relative;
           overflow-x: hidden;
         }
+        .delivery-sync-banner {
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          height: 32px;
+          background: #2563eb;
+          color: white;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 12px;
+          font-weight: 600;
+          z-index: 80;
+          letter-spacing: 0.02em;
+        }
+        .delivery-sync-spacer { height: 32px; }
 
         .delivery-page-root::before {
           content: '';
@@ -781,6 +971,12 @@ const DeliveryPage: React.FC<DeliveryPageProps> = ({
       `}</style>
 
       <div className="delivery-page-root">
+        {syncBanner && (
+          <>
+            <div className="delivery-sync-banner">{syncBanner}</div>
+            <div className="delivery-sync-spacer" />
+          </>
+        )}
         <div className="delivery-page-content space-y-6">
           <div className="delivery-hero">
             <div>

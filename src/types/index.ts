@@ -33,4 +33,5 @@ export type ViewType =
   | 'settings'
   | 'admin'
   | 'delivery'
-  | 'delivery_history';
+  | 'delivery_history'
+  | 'delivery_customers';

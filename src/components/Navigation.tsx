@@ -8,6 +8,7 @@ interface NavigationProps {
   onNavigate: (view: ViewType) => void;
   isAndroidNative: boolean;
   isDeliveryDriver: boolean;
+  isAccountManager: boolean;
 }
 
 const Navigation: React.FC<NavigationProps> = ({
@@ -16,6 +17,7 @@ const Navigation: React.FC<NavigationProps> = ({
   onNavigate,
   isAndroidNative,
   isDeliveryDriver,
+  isAccountManager,
 }) => {
   const [hideBottomNav, setHideBottomNav] = React.useState(false);
   const [spinningTab, setSpinningTab] = React.useState<string | null>(null);
@@ -29,8 +31,12 @@ const Navigation: React.FC<NavigationProps> = ({
     { id: 'profile' as ViewType, label: 'Profile', icon: User },
     ...(!isDeliveryDriver && isAndroidNative ? [{ id: 'settings' as ViewType, label: 'Settings', icon: Settings }] : []),
     ...(isDeliveryDriver ? [
-      { id: 'delivery'         as ViewType, label: 'Delivery', icon: Truck },
-      { id: 'delivery_history' as ViewType, label: 'History',  icon: History },
+      { id: 'delivery' as ViewType, label: 'Delivery', icon: Truck },
+      { id: 'delivery_customers' as ViewType, label: 'Customers', icon: Users },
+      { id: 'delivery_history' as ViewType, label: 'History', icon: History },
+    ] : []),
+    ...(isAccountManager ? [
+      { id: 'delivery_customers' as ViewType, label: 'Customers', icon: Users },
     ] : []),
     ...(employee.role === 'admin' ? [{ id: 'admin' as ViewType, label: 'Admin', icon: Users }] : []),
   ];
@@ -38,10 +44,20 @@ const Navigation: React.FC<NavigationProps> = ({
   const bottomNavItems = isDeliveryDriver
     ? [
         { id: 'delivery' as ViewType, label: 'Delivery', icon: Truck },
+        { id: 'delivery_customers' as ViewType, label: 'Customers', icon: Users },
         { id: 'delivery_history' as ViewType, label: 'History', icon: History },
         { id: 'profile' as ViewType, label: 'Profile', icon: User },
       ]
-    : [
+    : isAccountManager
+      ? [
+          { id: 'dashboard' as ViewType, label: 'Home', icon: Home },
+          { id: 'delivery_customers' as ViewType, label: 'Customers', icon: Users },
+          { id: 'scan' as ViewType, label: 'Login', icon: Hand },
+          { id: 'history' as ViewType, label: 'History', icon: Clock },
+          { id: 'profile' as ViewType, label: 'Profile', icon: User },
+          { id: 'settings' as ViewType, label: 'Settings', icon: Settings },
+        ]
+      : [
         { id: 'dashboard' as ViewType, label: 'Home', icon: Home },
         { id: 'history' as ViewType, label: 'History', icon: Clock },
         { id: 'scan' as ViewType, label: 'Login', icon: Hand },

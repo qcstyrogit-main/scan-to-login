@@ -153,8 +153,10 @@ export const createEmployeeCheckin = async (params: {
   latitude: number;
   longitude: number;
   deviceId: string;
+  customCustomer?: string;
+  customActivities?: string;
 }): Promise<Checkin> => {
-  const { employee, checkType, latitude, longitude, deviceId } = params;
+  const { employee, checkType, latitude, longitude, deviceId, customCustomer, customActivities } = params;
   const logType = checkType === "out" || checkType === "break_start" ? "OUT" : "IN";
 
   const res = await erpRequest(
@@ -167,6 +169,12 @@ export const createEmployeeCheckin = async (params: {
         latitude,
         longitude,
         device_id: deviceId,
+        custom_customer: customCustomer || undefined,
+        custom_activities: customActivities || undefined,
+        data: {
+          custom_customer: customCustomer || undefined,
+          custom_activities: customActivities || undefined,
+        },
       },
     }
   );
