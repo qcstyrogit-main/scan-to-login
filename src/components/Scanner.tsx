@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { supabase } from '@/lib/supabase';
 import { Employee, Checkin } from '@/types';
+import { erpRequest } from '@/lib/erpApi';
 import { Camera, QrCode, Check, X, Loader2, LogIn, LogOut, Coffee, Play, MapPin } from 'lucide-react';
 
 interface ScannerProps {
@@ -52,21 +52,57 @@ const Scanner: React.FC<ScannerProps> = ({ employee, onCheckin }) => {
     setError(null);
     setSuccess(null);
     try {
-      const { data, error: funcError } = await supabase.functions.invoke('employee-checkin', {
-        body: { employeeId: employee.id, checkType: selectedType, scanCode: scanCode || `MANUAL-${Date.now()}`, location: 'Main Office' }
-      });
-      if (funcError || !data.success) {
-        setError(data?.error || 'Check-in failed. Please try again.');
-        setLoading(false);
-        return;
+      // Get GPS location
+      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject);
+      }).catch(() => null);
+
+      const latitude = position?.coords.latitude ?? 0;
+      const longitude = position?.coords.longitude ?? 0;
+
+      // Call ERP API to create check-in
+      const checkinRes = await erpRequest(
+        '/api/method/qcmc_logic.api.login_scan.create_employee_checkin',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: {
+            log_type: selectedType === 'in' || selectedType === 'break_end' ? 'IN' : 'OUT',
+            latitude,
+            longitude,
+            device_id: `mobile-${employee.id}`,
+            scan_code: scanCode || `MANUAL-${Date.now()}`,
+            custom_location: employee.custom_location || undefined,
+          },
+        }
+      );
+
+      if (!checkinRes.ok) {
+        const payload = checkinRes.data?.message ?? checkinRes.data;
+        throw new Error(
+          payload?.error || 'Check-in failed. Please try again.'
+        );
       }
-      setSuccess(data.message);
-      onCheckin(data.checkin);
+
+      const payload = checkinRes.data?.message ?? checkinRes.data;
+      const checkin: Checkin = {
+        id: payload?.checkin?.name || `CHK-${Date.now()}`,
+        employee_id: employee.id,
+        check_type: selectedType,
+        timestamp: payload?.checkin?.time || new Date().toISOString(),
+        location: payload?.checkin?.location || employee.custom_location || 'Location',
+        scan_code: scanCode || `MANUAL-${Date.now()}`,
+        latitude,
+        longitude,
+      };
+
+      setSuccess(`${selectedType.replace('_', ' ')} successful`);
+      onCheckin(checkin);
       stopCamera();
       setManualCode('');
       setTimeout(() => setSuccess(null), 3000);
-    } catch {
-      setError('An unexpected error occurred');
+    } catch (err: any) {
+      setError(err.message || 'An unexpected error occurred');
     } finally {
       setLoading(false);
     }

@@ -137,6 +137,7 @@ export const fetchCheckins = async (employee?: Employee | null): Promise<Checkin
         readString(item.branch) ||
         undefined,
       scan_code: readString(item.scan_code) || readString(item.name) || undefined,
+      custom_activities: readString(item.custom_activities),
       latitude: toNumber(item.latitude ?? item.lat),
       longitude: toNumber(item.longitude ?? item.lng),
     };
@@ -238,5 +239,34 @@ export const validateCheckinRadius = async (params: {
     allowed,
     distanceMeters: Number.isFinite(distance) ? distance : undefined,
     message: allowed ? "Inside allowed area" : extractErrorMessage(data, "Outside allowed area"),
+  };
+};
+
+export const updateCheckinActivities = async (
+  checkinId: string,
+  activities?: string
+): Promise<{ success: boolean; message: string }> => {
+  const res = await erpRequest(
+    "/api/method/qcmc_logic.api.login_scan.update_checkin_activities",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: {
+        checkin_id: checkinId,
+        custom_activities: activities,
+      },
+    }
+  );
+
+  const data = res.data?.message ?? res.data;
+  const success = data?.success === true;
+
+  if (!success) {
+    throw new Error(extractErrorMessage(data, "Failed to update activities"));
+  }
+
+  return {
+    success: true,
+    message: data?.message || "Activities updated successfully",
   };
 };

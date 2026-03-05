@@ -34,6 +34,7 @@ const BIOMETRIC_STORAGE_KEY = 'settings.biometricEnabled';
 const PENDING_CHECKINS_KEY = 'pending_checkins_v1';
 const GEOFENCE_CACHE_KEY = 'geofence_cache_v1';
 const GEOFENCE_CACHE_TTL_MS = 30 * 60 * 1000;
+const GEOFENCE_REFRESH_MS = 5 * 60 * 1000;
 
 type PendingCheckin = {
   id: string;
@@ -309,6 +310,7 @@ const AppLayout: React.FC = () => {
   const [isOnline, setIsOnline] = useState(true);
   const [showOnlineBanner, setShowOnlineBanner] = useState(false);
   const [syncBanner, setSyncBanner] = useState<{ message: string; type: 'info' | 'success' } | null>(null);
+  const [offlineRestoreBanner, setOfflineRestoreBanner] = useState(false);
   const syncingRef = React.useRef(false);
   const [isInitializing, setIsInitializing] = useState(true);
   const [loginError, setLoginError] = useState<string | undefined>(undefined);
@@ -343,6 +345,40 @@ const AppLayout: React.FC = () => {
     }
   }, [employee, isOnline]);
 
+  useEffect(() => {
+    if (!employee || !isOnline || !isAppVisible) return;
+    let active = true;
+    const refresh = async () => {
+      try {
+        const { latitude, longitude } = await getCurrentLocation('checkin');
+        const result = await validateCheckinRadius({ latitude, longitude, allowedRadiusMeters: 50 });
+        if (!active) return;
+        saveGeofenceCache({
+          employeeId: employee.id,
+          allowed: result.allowed,
+          message: result.message,
+          distanceMeters: result.distanceMeters,
+          timestamp: Date.now(),
+        });
+      } catch {
+        // ignore background refresh failures
+      }
+    };
+    refresh();
+    const timer = setInterval(refresh, GEOFENCE_REFRESH_MS);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, [employee, isOnline, isAppVisible]);
+
+  useEffect(() => {
+    if (!employee || isOnline) return;
+    setOfflineRestoreBanner(true);
+    const timer = setTimeout(() => setOfflineRestoreBanner(false), 3000);
+    return () => clearTimeout(timer);
+  }, [employee, isOnline]);
+
   const syncPendingCheckins = React.useCallback(async () => {
     if (!employee || !isOnline || syncingRef.current) return;
     syncingRef.current = true;
@@ -354,12 +390,12 @@ const AppLayout: React.FC = () => {
         type: 'info',
       });
       const remaining: PendingCheckin[] = [];
+      const currentEmployeeItems = pending
+        .filter((item) => item.employeeId === employee.id)
+        .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+      const otherEmployeeItems = pending.filter((item) => item.employeeId !== employee.id);
       let syncedCount = 0;
-      for (const item of pending) {
-        if (item.employeeId !== employee.id) {
-          remaining.push(item);
-          continue;
-        }
+      for (const item of currentEmployeeItems) {
         try {
           await createEmployeeCheckin({
             employee,
@@ -375,6 +411,7 @@ const AppLayout: React.FC = () => {
           remaining.push(item);
         }
       }
+      remaining.push(...otherEmployeeItems);
       savePendingCheckins(remaining);
       if (syncedCount > 0) {
         queryClient.invalidateQueries({ queryKey: ['checkins', employee.id] });
@@ -441,6 +478,7 @@ const AppLayout: React.FC = () => {
         'dashboard',
         'history',
         'scan',
+        'settings',
       ];
       if (!allowedAccountViews.includes(currentView)) setCurrentView('delivery_customers');
       return;
@@ -731,11 +769,15 @@ const AppLayout: React.FC = () => {
   if (isInitializing) return <LoadingScreen />;
 
   if (!employee) {
+    const offlineMessage = !isOnline
+      ? 'Offline mode: cannot sign in without internet. If you have an active session, keep the app open.'
+      : undefined;
     return (
       <LoginPage
         onLogin={handleLogin}
         isLoading={loginMutation.isPending}
         error={loginError}
+        offlineMessage={offlineMessage}
       />
     );
   }
@@ -761,6 +803,14 @@ const AppLayout: React.FC = () => {
             style={{ top: isAndroidNative && (!isOnline || showOnlineBanner) ? 36 : 0 }}
           >
             {syncBanner.message}
+          </div>
+          <div className="sync-spacer" />
+        </>
+      )}
+      {offlineRestoreBanner && (
+        <>
+          <div className="sync-banner" style={{ top: isAndroidNative && (!isOnline || showOnlineBanner) ? 36 : 0 }}>
+            Offline session restored
           </div>
           <div className="sync-spacer" />
         </>
@@ -798,6 +848,7 @@ const AppLayout: React.FC = () => {
             checkins={checkins}
             selectedId={selectedHistoryId}
             onSelect={setSelectedHistoryId}
+            currentEmployee={employee}
           />
         )}
         {currentView === 'delivery' && isDeliveryDriver && (

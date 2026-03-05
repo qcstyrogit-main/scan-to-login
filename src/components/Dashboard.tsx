@@ -483,7 +483,7 @@ const Dashboard: React.FC<DashboardProps> = ({ employee, latestCheckin, recentCh
                       </div>
                       <div>
                         <div className="feed-label">{cfg.label}</div>
-                        <div className="feed-sub">{checkin.location || 'Main Office'}</div>
+                        <div className="feed-sub">{checkin.location || employee.custom_location || 'Location'}</div>
                       </div>
                       <div className="feed-time">
                         <div className="feed-time-main">{formatTime(checkin.timestamp)}</div>

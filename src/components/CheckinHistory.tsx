@@ -1,14 +1,50 @@
 import React, { useState } from 'react';
 import { Checkin } from '@/types';
-import { Clock, LogIn, LogOut, Coffee, Calendar, Filter, Search, Download, ChevronDown, Activity } from 'lucide-react';
+import { Clock, LogIn, LogOut, Coffee, Calendar, Filter, Search, Download, ChevronDown, Activity, Save, X } from 'lucide-react';
+import { Employee } from '@/types';
+import { updateCheckinActivities } from '@/lib/erpService';
+import { toast } from '@/components/ui/sonner';
 
 interface CheckinHistoryProps {
   checkins: Checkin[];
+  currentEmployee?: Employee;
 }
 
-const CheckinHistory: React.FC<CheckinHistoryProps> = ({ checkins }) => {
+const CheckinHistory: React.FC<CheckinHistoryProps> = ({ checkins, currentEmployee }) => {
   const [filter, setFilter] = useState<string>('all');
   const [searchDate, setSearchDate] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [activitiesText, setActivitiesText] = useState<Record<string, string>>({});
+
+  const GEOFENCE_EXEMPT_DESIGNATIONS = [
+    "account manager",
+    "regional sales manager - (gma terr)",
+    "regional sales manager - provincial",
+    "regional sales manager - (ind/insti/sup)",
+  ];
+
+  const canEditActivities = currentEmployee?.designation &&
+    GEOFENCE_EXEMPT_DESIGNATIONS.includes(currentEmployee.designation.toLowerCase());
+
+  const startEdit = (checkinId: string, currentActivities?: string) => {
+    setEditingId(checkinId);
+    setActivitiesText({ ...activitiesText, [checkinId]: currentActivities || '' });
+  };
+
+  const saveActivities = async (checkinId: string) => {
+    const activities = activitiesText[checkinId] || '';
+    try {
+      await updateCheckinActivities(checkinId, activities);
+      toast.success('Activities updated successfully');
+      setEditingId(null);
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to update activities');
+    }
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+  };
 
   const typeConfig: Record<string, { icon: React.ElementType; accent: string; bg: string; label: string }> = {
     in:          { icon: LogIn,  accent: '#22c55e', bg: 'rgba(34,197,94,0.1)',   label: 'Checked In'    },
@@ -40,13 +76,14 @@ const CheckinHistory: React.FC<CheckinHistoryProps> = ({ checkins }) => {
   }, {} as Record<string, Checkin[]>);
 
   const exportToCSV = () => {
-    const headers = ['Date', 'Time', 'Type', 'Location', 'Code'];
+    const headers = ['Date', 'Time', 'Type', 'Location', 'Code', 'Activities'];
     const rows = filteredCheckins.map(c => [
       formatDate(c.timestamp),
       formatTime(c.timestamp),
       typeConfig[c.check_type]?.label || c.check_type,
       c.location || 'N/A',
       c.scan_code || 'N/A',
+      c.custom_activities || 'N/A',
     ]);
     const csv = [headers, ...rows].map(r => r.join(',')).join('\n');
     const a = document.createElement('a');
@@ -201,7 +238,23 @@ const CheckinHistory: React.FC<CheckinHistoryProps> = ({ checkins }) => {
           width: 36px; height: 36px; border-radius: 10px; flex-shrink: 0;
           display: flex; align-items: center; justify-content: center;
           border: 1px solid hsl(var(--border));
+          position: relative;
         }
+
+        .ch-led {
+          position: absolute;
+          top: 4px; right: 4px;
+          width: 8px; height: 8px;
+          border-radius: 50%;
+          box-shadow: 0 0 4px currentColor;
+          animation: chLedPulse 1.5s infinite alternate;
+        }
+        @keyframes chLedPulse {
+          0% { opacity: 0.6; }
+          100% { opacity: 1; transform: scale(1.1); }
+        }
+        .ch-led-in  { background: #22c55e; color: #22c55e; }
+        .ch-led-out { background: #ef4444; color: #ef4444; }
 
         .ch-row-label { font-size: 14px; font-weight: 500; color: hsl(var(--foreground)); }
         .ch-row-loc   { font-size: 12px; color: hsl(var(--muted-foreground)); margin-top: 2px; }
@@ -211,6 +264,37 @@ const CheckinHistory: React.FC<CheckinHistoryProps> = ({ checkins }) => {
           font-family: 'JetBrains Mono', monospace;
           font-size: 14px; font-weight: 500; color: hsl(var(--muted-foreground));
         }
+
+        /* ── Activities field ── */
+        .ch-activities { margin-top: 8px; padding-top: 8px; border-top: 1px solid hsl(var(--border) / 0.5); }
+        .ch-activities-label { font-size: 11px; font-weight: 600; color: hsl(var(--muted-foreground)); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.05em; }
+        .ch-activities-value { font-size: 13px; color: hsl(var(--foreground)); white-space: pre-wrap; min-height: 36px; padding: 8px; background: hsl(var(--foreground) / 0.02); border-radius: 6px; border: 1px solid hsl(var(--border) / 0.5); margin-bottom: 6px; }
+
+        .ch-activities-textarea {
+          width: 100%; min-height: 60px; padding: 8px 10px;
+          background: hsl(var(--background));
+          border: 1px solid hsl(var(--border));
+          border-radius: 6px; color: hsl(var(--foreground)); font-size: 13px;
+          font-family: 'Sora', sans-serif; resize: vertical; outline: none;
+          transition: border-color 0.2s;
+        }
+        .ch-activities-textarea:focus { border-color: hsl(var(--primary) / 0.6); background: hsl(var(--primary) / 0.05); }
+
+        .ch-activities-actions { display: flex; gap: 8px; margin-top: 6px; }
+
+        .ch-btn-edit, .ch-btn-save, .ch-btn-cancel {
+          padding: 5px 10px; border: 1px solid hsl(var(--border)); border-radius: 6px;
+          font-size: 12px; font-weight: 500; cursor: pointer; transition: all 0.2s;
+          display: inline-flex; align-items: center; gap: 4px;
+        }
+        .ch-btn-edit { background: hsl(var(--foreground) / 0.05); color: hsl(var(--muted-foreground)); }
+        .ch-btn-edit:hover { background: hsl(var(--primary) / 0.12); color: hsl(var(--primary)); border-color: hsl(var(--primary) / 0.3); }
+
+        .ch-btn-save { background: hsl(var(--primary)); color: white; border-color: hsl(var(--primary)); }
+        .ch-btn-save:hover { background: hsl(var(--primary) / 0.9); }
+
+        .ch-btn-cancel { background: hsl(var(--foreground) / 0.05); color: hsl(var(--muted-foreground)); }
+        .ch-btn-cancel:hover { background: hsl(var(--foreground) / 0.1); color: hsl(var(--foreground)); }
 
         .ch-empty {
           padding: 60px 24px; text-align: center;
@@ -301,10 +385,52 @@ const CheckinHistory: React.FC<CheckinHistoryProps> = ({ checkins }) => {
                     <div className="ch-row" key={c.id}>
                       <div className="ch-row-icon" style={{ background: cfg.bg }}>
                         <Icon size={15} color={cfg.accent} />
+                        {(c.check_type === 'in' || c.check_type === 'out') && (
+                          <div
+                            className={`ch-led ch-led-${c.check_type}`}
+                            title={c.check_type === 'in' ? 'Checked In' : 'Checked Out'}
+                          />
+                        )}
                       </div>
                       <div>
                         <div className="ch-row-label">{cfg.label}</div>
                         {c.location && <div className="ch-row-loc">{c.location}</div>}
+                        {canEditActivities && c.check_type === 'out' && (
+                          <div className="ch-activities">
+                            {editingId === c.id ? (
+                              <>
+                                <textarea
+                                  className="ch-activities-textarea"
+                                  value={activitiesText[c.id] || ''}
+                                  onChange={(e) => setActivitiesText({ ...activitiesText, [c.id]: e.target.value })}
+                                  placeholder="Enter activities..."
+                                  rows={3}
+                                />
+                                <div className="ch-activities-actions">
+                                  <button className="ch-btn-save" onClick={() => saveActivities(c.id)}>
+                                    <Save size={14} /> Save
+                                  </button>
+                                  <button className="ch-btn-cancel" onClick={cancelEdit}>
+                                    <X size={14} /> Cancel
+                                  </button>
+                                </div>
+                              </>
+                            ) : (
+                              <>
+                                <div className="ch-activities-label">Activities:</div>
+                                <div className="ch-activities-value">
+                                  {c.custom_activities || 'No activities recorded'}
+                                </div>
+                                <button
+                                  className="ch-btn-edit"
+                                  onClick={() => startEdit(c.id, c.custom_activities)}
+                                >
+                                  Edit
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        )}
                       </div>
                       <div className="ch-row-time">{formatTime(c.timestamp)}</div>
                     </div>

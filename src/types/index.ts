@@ -21,6 +21,7 @@ export interface Checkin {
   location?: string;
   scan_code?: string;
   notes?: string;
+  custom_activities?: string;
   latitude?: number;
   longitude?: number;
 }

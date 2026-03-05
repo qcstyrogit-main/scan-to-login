@@ -145,3 +145,59 @@ export const getAddressFromCoordinates = async (
 
   return "";
 };
+
+export const getAddressDetailsFromCoordinates = async (
+  latitude: number,
+  longitude: number
+): Promise<{ displayName: string; city?: string; country?: string }> => {
+  try {
+    const res = await erpRequest("/api/method/qcmc_logic.api.login_scan.reverse_geocode", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: {
+        latitude,
+        longitude,
+        zoom: 18,
+      },
+    });
+
+    const payload = res.data?.message ?? res.data ?? {};
+    if (!res.ok || payload?.success === false) {
+      return { displayName: "" };
+    }
+
+    const address = payload?.address || {};
+    const city =
+      address?.city ||
+      address?.town ||
+      address?.village ||
+      address?.municipality ||
+      address?.county ||
+      address?.state_district;
+    const country = address?.country;
+    const displayName =
+      typeof payload?.display_name === "string" ? payload.display_name.trim() : "";
+
+    if (displayName) {
+      return { displayName, city, country };
+    }
+
+    const parts = [
+      payload?.name,
+      address?.building,
+      address?.house_number && address?.road
+        ? `${address.house_number} ${address.road}`
+        : address?.road,
+      address?.neighbourhood,
+      address?.suburb,
+      city,
+      address?.state,
+      address?.postcode,
+      country,
+    ].filter(Boolean);
+
+    return { displayName: parts.join(", "), city, country };
+  } catch {
+    return { displayName: "" };
+  }
+};

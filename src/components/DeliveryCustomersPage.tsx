@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Circle, MapContainer, Marker, Popup, TileLayer } from 'react-leaflet';
 import L from 'leaflet';
-import { getAddressFromCoordinates, getCurrentLocation } from '@/lib/location';
+import { getAddressDetailsFromCoordinates, getCurrentLocation } from '@/lib/location';
 import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
 import markerIcon from 'leaflet/dist/images/marker-icon.png';
 import markerShadow from 'leaflet/dist/images/marker-shadow.png';
@@ -260,14 +260,17 @@ const DeliveryCustomersPage: React.FC = () => {
   const [customerSearch, setCustomerSearch] = useState('');
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
+  const [selectedCustomerName, setSelectedCustomerName] = useState('');
   const customerInputRef = useRef<HTMLInputElement | null>(null);
-  const addressInputRef = useRef<HTMLInputElement | null>(null);
+  const addressInputRef = useRef<HTMLTextAreaElement | null>(null);
   const [searchCustomerInput, setSearchCustomerInput] = useState('');
   const [searchCustomerQuery, setSearchCustomerQuery] = useState('');
   const [showSearchDropdown, setShowSearchDropdown] = useState(false);
   const [selectedSearchCustomerId, setSelectedSearchCustomerId] = useState('');
   const [addressTypeOpen, setAddressTypeOpen] = useState(false);
   const addressTypeRef = useRef<HTMLDivElement | null>(null);
+  const [showGeoFields, setShowGeoFields] = useState(false);
+  const [autoLocationName, setAutoLocationName] = useState(true);
   const [form, setForm] = useState<LocationRecord>({
     name: '',
     location_name: '',
@@ -447,8 +450,59 @@ const DeliveryCustomersPage: React.FC = () => {
     setCustomerSearch('');
     setShowCustomerDropdown(false);
     setSelectedCustomerId('');
+    setSelectedCustomerName('');
+    setAutoLocationName(true);
+    setShowGeoFields(false);
     setIsCreateOpen(true);
   };
+
+  const resolveCustomerName = () => {
+    const input = (selectedCustomerName || customerInput || customerSearch || '').trim();
+    if (!input) return '';
+    return input;
+  };
+
+  const buildLocationName = (customerName: string, count: number) => {
+    const series = String(Math.max(1, count + 1)).padStart(3, '0');
+    return `${customerName} ${series}`;
+  };
+
+  useEffect(() => {
+    if (!isCreateOpen || !selectedCustomerId || !autoLocationName) return;
+    const customerName = resolveCustomerName();
+    if (!customerName) return;
+    let active = true;
+    const loadCount = async () => {
+      try {
+        const res = await erpRequest(`${LOCATION_API_PREFIX}.list_locations_by_customer`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: {
+            limit: 1,
+            start: 0,
+            customer: selectedCustomerId,
+            custom_is_customer: 1,
+            is_group: 0,
+            is_container: 0,
+          },
+        });
+        const payload = res.data?.message ?? res.data;
+        if (!res.ok || payload?.success === false) return;
+        const count = Number(payload?.count) || 0;
+        if (!active) return;
+        setForm((prev) => {
+          if (!autoLocationName || prev.location_name?.trim()) return prev;
+          return { ...prev, location_name: buildLocationName(customerName, count) };
+        });
+      } catch {
+        // ignore auto-name failures
+      }
+    };
+    loadCount();
+    return () => {
+      active = false;
+    };
+  }, [isCreateOpen, selectedCustomerId, autoLocationName]);
 
 
   useEffect(() => {
@@ -517,7 +571,7 @@ const DeliveryCustomersPage: React.FC = () => {
       const fallbackAddressInput =
         addressInputRef.current?.value ||
         (typeof document !== 'undefined'
-          ? (document.getElementById('address-input') as HTMLInputElement | null)?.value
+          ? (document.getElementById('address-input') as HTMLTextAreaElement | null)?.value
           : '') ||
         '';
       const resolvedAddressInput = (
@@ -663,10 +717,10 @@ const DeliveryCustomersPage: React.FC = () => {
     const loadAddress = async () => {
       setReverseGeocodeLoading(true);
       try {
-        const addr = await getAddressFromCoordinates(form.latitude as number, form.longitude as number);
-        if (alive && addr) {
-          setLocationInput(addr);
-          setForm((prev) => ({ ...prev, location: addr }));
+        const addr = await getAddressDetailsFromCoordinates(form.latitude as number, form.longitude as number);
+        if (alive && addr?.displayName) {
+          setLocationInput(addr.displayName);
+          setForm((prev) => ({ ...prev, location: addr.displayName }));
         }
       } finally {
         if (alive) setReverseGeocodeLoading(false);
@@ -698,10 +752,16 @@ const DeliveryCustomersPage: React.FC = () => {
         area_uom: 'Square Meter',
         location: geoJson ?? prev.location,
       }));
-      const addr = await getAddressFromCoordinates(latitude, longitude);
-      if (addr) {
-        setLocationInput(addr);
-        setForm((prev) => ({ ...prev, location: addr }));
+      const addr = await getAddressDetailsFromCoordinates(latitude, longitude);
+      if (addr?.displayName) {
+        setLocationInput(addr.displayName);
+        setForm((prev) => ({ ...prev, location: addr.displayName }));
+        setAddressForm((prev) => ({
+          ...prev,
+          city: prev.city || addr.city || '',
+          country: prev.country || addr.country || '',
+        }));
+        setShowGeoFields(true);
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Unable to get current location');
@@ -713,10 +773,20 @@ const DeliveryCustomersPage: React.FC = () => {
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
+        @keyframes fadeUp {
+          from { opacity: 0; transform: translateY(10px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
         .cust-root {
           font-family: 'Sora', sans-serif;
+          animation: fadeUp 0.4s ease both;
+        }
+        .cust-mono { font-family: 'JetBrains Mono', monospace; }
+        .cust-root {
+          font-family: 'Sora', sans-serif;
+          animation: fadeUp 0.4s ease both;
           color: hsl(var(--foreground));
           min-height: 100vh;
           padding-bottom: calc(90px + env(safe-area-inset-bottom));
@@ -777,7 +847,7 @@ const DeliveryCustomersPage: React.FC = () => {
           background: hsl(var(--background));
           border: 1px solid hsl(var(--border));
           border-radius: 12px;
-          padding: 6px 10px;
+          padding: 10px 14px;
         }
         .cust-search-wrap {
           position: relative;
@@ -792,8 +862,64 @@ const DeliveryCustomersPage: React.FC = () => {
           color: hsl(var(--foreground));
           width: 100%;
         }
+        .cust-textarea {
+          width: 100%;
+          min-height: 96px;
+          resize: vertical;
+          padding: 10px 12px;
+          border-radius: 10px;
+          background: hsl(var(--background));
+          border: 1px solid hsl(var(--border));
+          color: hsl(var(--foreground));
+          font-size: 13px;
+          outline: none;
+          font-family: 'Sora', sans-serif;
+          transition: border-color 0.2s, background 0.2s;
+        }
+        .cust-textarea:focus {
+          border-color: hsl(var(--primary) / 0.4);
+          background: hsl(var(--primary) / 0.05);
+        }
 
         .cust-actions {
+        .cust-btn {
+          padding: 11px 18px;
+          border-radius: 11px;
+          cursor: pointer;
+          border: none;
+          font-family: 'Sora', sans-serif;
+          font-size: 13px;
+          font-weight: 600;
+          transition: all 0.15s;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 7px;
+        }
+        .cust-btn-primary {
+          color: white;
+          background: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary) / 0.85));
+          box-shadow: 0 4px 14px rgba(99,102,241,0.25);
+        }
+        .cust-btn-primary:hover {
+          opacity: 0.9;
+          transform: translateY(-1px);
+        }
+        .cust-btn-secondary {
+          background: hsl(var(--foreground) / 0.05);
+          border: 1px solid hsl(var(--foreground) / 0.08);
+          color: hsl(var(--muted-foreground));
+        }
+        .cust-btn-secondary:hover {
+          background: hsl(var(--primary) / 0.12);
+          color: hsl(var(--primary));
+          border-color: hsl(var(--primary) / 0.3);
+        }
+        .cust-btn-secondary:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+
           display: flex;
           align-items: center;
           gap: 10px;
@@ -1251,17 +1377,18 @@ const DeliveryCustomersPage: React.FC = () => {
             <div className="cust-form-field" style={{ gridColumn: 'span 2' }}>
               <Label>Customer</Label>
               <div className="cust-dropdown-wrap">
-                <Input
-                  ref={customerInputRef}
-                  id="customer-input"
-                  autoComplete="off"
-                  value={customerInput}
-                  onChange={(e) => {
-                    const nextValue = e.target.value ?? '';
-                    setCustomerInput(nextValue);
-                    setCustomerSearch(nextValue);
-                    setShowCustomerDropdown(true);
-                  }}
+                  <Input
+                    ref={customerInputRef}
+                    id="customer-input"
+                    autoComplete="off"
+                    value={customerInput}
+                    onChange={(e) => {
+                      const nextValue = e.target.value ?? '';
+                      setCustomerInput(nextValue);
+                      setCustomerSearch(nextValue);
+                      setShowCustomerDropdown(true);
+                      setSelectedCustomerName(nextValue);
+                    }}
                   onFocus={() => setShowCustomerDropdown(true)}
                   onBlur={() => {
                     setTimeout(() => setShowCustomerDropdown(false), 150);
@@ -1282,6 +1409,8 @@ const DeliveryCustomersPage: React.FC = () => {
                           setCustomerInput(selectedId || selectedLabel);
                           setCustomerSearch(selectedId || selectedLabel);
                           setSelectedCustomerId(selectedId);
+                          setSelectedCustomerName(selectedLabel);
+                          setAutoLocationName(true);
                           setShowCustomerDropdown(false);
                         }}
                       >
@@ -1303,7 +1432,7 @@ const DeliveryCustomersPage: React.FC = () => {
               <Input
                 value={form.location_name || ''}
                 autoComplete="off"
-                onChange={(e) => handleFormChange('location_name', e.target.value)}
+                readOnly
                 placeholder="Customer Address Name"
               />
             </div>
@@ -1311,9 +1440,9 @@ const DeliveryCustomersPage: React.FC = () => {
               {showAddressField && (
                 <>
                   <Label>Address</Label>
-                  <Input
+                  <textarea
                     id="address-input"
-                    ref={addressInputRef}
+                    ref={addressInputRef as unknown as React.RefObject<HTMLTextAreaElement>}
                     autoComplete="off"
                     value={locationInput}
                     readOnly
@@ -1322,6 +1451,8 @@ const DeliveryCustomersPage: React.FC = () => {
                       handleFormChange('location', e.target.value);
                     }}
                     placeholder="Full address"
+                    rows={4}
+                    className="cust-textarea"
                   />
                   {isLikelyJson(form.location) && !locationInput && (
                     <span className="text-xs text-muted-foreground">Map coordinates saved.</span>
@@ -1359,22 +1490,26 @@ const DeliveryCustomersPage: React.FC = () => {
                 )}
               </div>
             </div>
-            <div className="cust-form-field">
-              <Label>City</Label>
-              <Input
-                value={addressForm.city}
-                onChange={(e) => setAddressForm((prev) => ({ ...prev, city: e.target.value }))}
-                placeholder="City"
-              />
-            </div>
-            <div className="cust-form-field">
-              <Label>Country</Label>
-              <Input
-                value={addressForm.country}
-                onChange={(e) => setAddressForm((prev) => ({ ...prev, country: e.target.value }))}
-                placeholder="Country"
-              />
-            </div>
+            {showGeoFields && (
+              <>
+                <div className="cust-form-field">
+                  <Label>City</Label>
+                  <Input
+                    value={addressForm.city}
+                    readOnly
+                    placeholder="City"
+                  />
+                </div>
+                <div className="cust-form-field">
+                  <Label>Country</Label>
+                  <Input
+                    value={addressForm.country}
+                    readOnly
+                    placeholder="Country"
+                  />
+                </div>
+              </>
+            )}
             <div className="cust-form-field" style={{ gridColumn: 'span 2' }}>
               <Label>Email</Label>
               <Input

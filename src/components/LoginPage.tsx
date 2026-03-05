@@ -5,9 +5,10 @@ interface LoginPageProps {
   onLogin: (email: string, password: string) => void;
   isLoading?: boolean;
   error?: string;
+  offlineMessage?: string;
 }
 
-const LoginPage: React.FC<LoginPageProps> = ({ onLogin, isLoading = false, error }) => {
+const LoginPage: React.FC<LoginPageProps> = ({ onLogin, isLoading = false, error, offlineMessage }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -180,6 +181,14 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, isLoading = false, error
           font-size: 13px; color: hsl(var(--destructive));
           margin-bottom: 20px;
         }
+        .lp-info {
+          background: hsl(var(--primary) / 0.08);
+          border: 1px solid hsl(var(--primary) / 0.2);
+          border-radius: 10px;
+          padding: 11px 14px;
+          font-size: 13px; color: hsl(var(--primary));
+          margin-bottom: 20px;
+        }
 
         /* Fields */
         .lp-field { margin-bottom: 18px; }
@@ -304,6 +313,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, isLoading = false, error
               <div className="lp-card-title">Welcome back</div>
               <div className="lp-card-sub">Sign in to your account to continue</div>
 
+              {offlineMessage && <div className="lp-info">{offlineMessage}</div>}
               {error && <div className="lp-error">{error}</div>}
 
               <form onSubmit={handleSubmit}>

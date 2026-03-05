@@ -1,10 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabase';
 import { Employee } from '@/types';
+import { erpRequest } from '@/lib/erpApi';
 import {
   Users, Search, RefreshCw, LogIn, LogOut, Coffee, Clock,
   Building2, Mail, Phone, ChevronDown, Activity,
 } from 'lucide-react';
+
+const asRecord = (value: unknown): Record<string, unknown> => {
+  if (!value || typeof value !== 'object') return {};
+  return value as Record<string, unknown>;
+};
+
+const readString = (value: unknown): string | undefined =>
+  typeof value === 'string' ? value : undefined;
 
 const AdminPanel: React.FC = () => {
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -16,12 +24,47 @@ const AdminPanel: React.FC = () => {
   const fetchEmployees = async () => {
     setLoading(true);
     try {
-      const { data } = await supabase.functions.invoke('employee-auth', {
-        body: { action: 'get_employees' },
+      const res = await erpRequest('/api/method/qcmc_logic.api.employee.get_all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: {},
       });
-      if (data?.success) setEmployees(data.employees);
+
+      if (res.ok && res.data) {
+        const payload = res.data.message ?? res.data;
+        const list = Array.isArray(payload) ? payload : [];
+
+        const mapped: Employee[] = list.map((item: unknown) => {
+          const record = asRecord(item);
+          return {
+            id: readString(record.name) || readString(record.email) || 'unknown',
+            employee_id: readString(record.employee) || readString(record.employee_id),
+            email: readString(record.email) || 'unknown@example.com',
+            full_name:
+              readString(record.full_name) ||
+              readString(record.name) ||
+              'Employee',
+            department: readString(record.department) || 'General',
+            company: readString(record.company) || '-',
+            role: readString(record.user_type) === 'System User' || readString(record.name) === 'Administrator' ? 'admin' : 'employee',
+            latestCheckin: record.latest_checkin ? {
+              id: readString(asRecord(record.latest_checkin).name) || `CHK-${Date.now()}`,
+              employee_id: readString(record.name) || '',
+              check_type: readString(asRecord(record.latest_checkin).check_type) || 'out',
+              timestamp: readString(asRecord(record.latest_checkin).timestamp) || new Date().toISOString(),
+              location: readString(asRecord(record.latest_checkin).location) || undefined,
+            } : undefined,
+          };
+        });
+
+        setEmployees(mapped);
+      } else {
+        console.error('Failed to fetch employees:', res);
+        setEmployees([]);
+      }
     } catch (err) {
       console.error('Error fetching employees:', err);
+      setEmployees([]);
     } finally {
       setLoading(false);
     }
