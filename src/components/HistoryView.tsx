@@ -1,7 +1,8 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Checkin, Employee } from '@/types';
 import { Clock, LogIn, LogOut, Coffee, MapPin, Activity, Save, X, Edit3 } from 'lucide-react';
 import HistoryMap from '@/components/HistoryMap';
+import { buildActivitiesWithProcessingRemark, stripProcessingRemark } from '@/lib/checkinActivities';
 import { updateCheckinActivities } from '@/lib/erpService';
 import { toast } from '@/components/ui/sonner';
 import { useQueryClient } from '@tanstack/react-query';
@@ -40,27 +41,38 @@ const HistoryView: React.FC<HistoryViewProps> = ({ checkins, selectedId, onSelec
 
   const canEditActivities = currentEmployee?.designation &&
     GEOFENCE_EXEMPT_DESIGNATIONS.includes(currentEmployee.designation.toLowerCase());
-
   const selectedCheckin = checkins.find(c => c.id === selectedId);
+  const selectedProcessingLabel = selectedCheckin?.processingMode === 'offline'
+    ? 'Processed offline'
+    : 'Processed online';
+  const selectedSyncDetail = selectedCheckin?.processingMode === 'offline' && selectedCheckin.syncStatus === 'pending'
+    ? 'Waiting for sync'
+    : selectedCheckin
+      ? 'Synced'
+      : '';
   const [showActivitiesDialog, setShowActivitiesDialog] = useState(false);
   const [activitiesText, setActivitiesText] = useState('');
   const [selectedForEdit, setSelectedForEdit] = useState<Checkin | null>(null);
 
   const startEdit = (checkin: Checkin) => {
     setSelectedForEdit(checkin);
-    setActivitiesText(checkin.custom_activities || '');
+    setActivitiesText(stripProcessingRemark(checkin.custom_activities));
     setShowActivitiesDialog(true);
   };
 
   const saveActivities = async () => {
     if (!selectedForEdit) return;
+    const nextActivities = buildActivitiesWithProcessingRemark(
+      activitiesText,
+      selectedForEdit.processingMode === 'offline' ? 'offline' : 'online'
+    );
     try {
-      await updateCheckinActivities(selectedForEdit.id, activitiesText);
+      await updateCheckinActivities(selectedForEdit.id, nextActivities);
       if (currentEmployee?.id) {
         queryClient.setQueryData<Checkin[]>(['checkins', currentEmployee.id], (prev = []) =>
           prev.map((checkin) =>
             checkin.id === selectedForEdit.id
-              ? { ...checkin, custom_activities: activitiesText }
+              ? { ...checkin, custom_activities: nextActivities }
               : checkin
           )
         );
@@ -79,64 +91,18 @@ const HistoryView: React.FC<HistoryViewProps> = ({ checkins, selectedId, onSelec
     setShowActivitiesDialog(false);
     setSelectedForEdit(null);
   };
-  const [selectedMonth, setSelectedMonth] = useState<string>('all');
-  const [isMonthOpen, setIsMonthOpen] = useState(false);
-  const monthMenuRef = useRef<HTMLDivElement | null>(null);
-
   const formatTime = (ts: string) =>
     new Date(ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
   const formatDate = (ts: string) =>
     new Date(ts).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 
-  const monthOptions = useMemo(() => {
-    const seen = new Set<string>();
-    const options: string[] = [];
-    for (const c of checkins) {
-      const d = new Date(c.timestamp);
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        options.push(key);
-      }
-    }
-    return options.sort((a, b) => (a < b ? 1 : -1));
-  }, [checkins]);
-
-  const filteredCheckins = useMemo(() => {
-    if (selectedMonth === 'all') return checkins;
-    return checkins.filter((c) => {
-      const d = new Date(c.timestamp);
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-      return key === selectedMonth;
-    });
-  }, [checkins, selectedMonth]);
+  const filteredCheckins = useMemo(() => checkins, [checkins]);
 
   useEffect(() => {
     if (!selectedId) return;
     if (filteredCheckins.some((c) => c.id === selectedId)) return;
     onSelect(filteredCheckins[0]?.id ?? null);
   }, [filteredCheckins, onSelect, selectedId]);
-
-  useEffect(() => {
-    if (!isMonthOpen) return;
-    const onDocClick = (event: MouseEvent) => {
-      const target = event.target as Node | null;
-      if (!target || !monthMenuRef.current) return;
-      if (monthMenuRef.current.contains(target)) return;
-      setIsMonthOpen(false);
-    };
-    document.addEventListener('mousedown', onDocClick);
-    return () => document.removeEventListener('mousedown', onDocClick);
-  }, [isMonthOpen]);
-
-  const formatMonthLabel = (key: string) => {
-    if (key === 'all') return 'All months';
-    const [y, m] = key.split('-').map(Number);
-    return new Date(y, (m || 1) - 1, 1).toLocaleDateString('en-US', {
-      month: 'long',
-      year: 'numeric',
-    });
-  };
 
   return (
     <>
@@ -202,80 +168,6 @@ const HistoryView: React.FC<HistoryViewProps> = ({ checkins, selectedId, onSelec
           font-size: 11px; font-weight: 600;
           text-transform: uppercase; letter-spacing: 0.07em; color: hsl(var(--muted-foreground));
           flex-shrink: 0;
-        }
-
-        .hv-filter {
-          margin-left: auto;
-          display: inline-flex;
-          align-items: center;
-          gap: 8px;
-          font-family: 'Sora', sans-serif;
-          font-size: 11px;
-          font-weight: 600;
-          text-transform: none;
-          letter-spacing: 0.02em;
-          color: hsl(var(--foreground));
-        }
-        .hv-filter-btn {
-          display: inline-flex;
-          align-items: center;
-          gap: 6px;
-          padding: 6px 12px;
-          border-radius: 999px;
-          border: 1px solid hsl(var(--border));
-          background: hsl(var(--card));
-          color: hsl(var(--foreground));
-          font-size: 12px;
-          font-weight: 600;
-          cursor: pointer;
-          font-family: 'Sora', sans-serif;
-        }
-        .hv-filter-menu {
-          position: absolute;
-          top: calc(100% + 8px);
-          right: 0;
-          min-width: 190px;
-          max-height: 240px;
-          overflow: auto;
-          border-radius: 12px;
-          border: 1px solid hsl(var(--border));
-          background: hsl(var(--card));
-          box-shadow: 0 10px 24px -18px rgba(15,23,42,0.4);
-          padding: 6px;
-          z-index: 20;
-        }
-        .hv-filter-option {
-          width: 100%;
-          text-align: left;
-          padding: 8px 10px;
-          border-radius: 8px;
-          border: none;
-          background: transparent;
-          cursor: pointer;
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          font-size: 12px;
-          font-weight: 600;
-          color: hsl(var(--muted-foreground));
-          font-family: 'Sora', sans-serif;
-        }
-        .hv-filter-option.active { color: hsl(var(--foreground)); background: hsl(var(--foreground) / 0.03); }
-        .hv-filter-option:hover { background: hsl(var(--foreground) / 0.05); }
-        .hv-filter-check {
-          width: 14px;
-          height: 14px;
-          border-radius: 999px;
-          border: 2px solid hsl(var(--muted-foreground));
-          display: inline-block;
-        }
-        .hv-filter-check.active {
-          border-color: hsl(var(--primary));
-          box-shadow: inset 0 0 0 4px hsl(var(--primary));
-        }
-        .hv-filter span {
-          color: hsl(var(--muted-foreground));
-          font-size: 10px;
         }
 
         .hv-list-scroll { overflow-y: auto; flex: 1; }
@@ -372,6 +264,13 @@ const HistoryView: React.FC<HistoryViewProps> = ({ checkins, selectedId, onSelec
           justify-content: space-between;
           align-items: center;
           margin-bottom: 4px;
+          gap: 8px;
+        }
+        .hv-activities-header-main {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          flex-wrap: wrap;
         }
         .hv-activities-title {
           font-size: 11px;
@@ -379,6 +278,33 @@ const HistoryView: React.FC<HistoryViewProps> = ({ checkins, selectedId, onSelec
           color: hsl(var(--muted-foreground));
           text-transform: uppercase;
           letter-spacing: 0.05em;
+        }
+        .hv-processing-badge {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          padding: 4px 8px;
+          border-radius: 999px;
+          font-size: 10px;
+          font-weight: 600;
+          letter-spacing: 0.02em;
+          background: hsl(var(--secondary));
+          color: hsl(var(--foreground));
+          border: 1px solid hsl(var(--border));
+        }
+        .hv-processing-badge.offline {
+          background: rgba(245, 158, 11, 0.12);
+          color: #b45309;
+          border-color: rgba(245, 158, 11, 0.25);
+        }
+        .hv-processing-badge.online {
+          background: rgba(34, 197, 94, 0.12);
+          color: #15803d;
+          border-color: rgba(34, 197, 94, 0.25);
+        }
+        .hv-sync-detail {
+          font-size: 11px;
+          color: hsl(var(--muted-foreground));
         }
         .hv-activities-content {
           font-size: 12px;
@@ -445,8 +371,18 @@ const HistoryView: React.FC<HistoryViewProps> = ({ checkins, selectedId, onSelec
         {/* Activities panel below map */}
         <div className="hv-activities-panel">
           <div className="hv-activities-header">
-            <div className="hv-activities-title">Activities</div>
-            {canEditActivities && selectedCheckin?.check_type === 'out' && (
+            <div className="hv-activities-header-main">
+              <div className="hv-activities-title">Activities</div>
+              {selectedCheckin && (
+                <>
+                  <div className={`hv-processing-badge ${selectedCheckin.processingMode === 'offline' ? 'offline' : 'online'}`}>
+                    {selectedProcessingLabel}
+                  </div>
+                  <div className="hv-sync-detail">{selectedSyncDetail}</div>
+                </>
+              )}
+            </div>
+            {canEditActivities && selectedCheckin?.check_type === 'out' && selectedCheckin.syncStatus !== 'pending' && (
               <button className="hv-edit-btn" onClick={() => startEdit(selectedCheckin)}>
                 <Edit3 size={14} /> Edit
               </button>
@@ -466,36 +402,6 @@ const HistoryView: React.FC<HistoryViewProps> = ({ checkins, selectedId, onSelec
           <div className="hv-list-header">
             <Activity size={12} />
             {filteredCheckins.length} record{filteredCheckins.length !== 1 ? 's' : ''}
-            <div className="hv-filter" ref={monthMenuRef} style={{ position: 'relative' }}>
-              <span>Month</span>
-              <button
-                type="button"
-                className="hv-filter-btn"
-                onClick={() => setIsMonthOpen((prev) => !prev)}
-                aria-haspopup="listbox"
-                aria-expanded={isMonthOpen}
-              >
-                {formatMonthLabel(selectedMonth)}
-              </button>
-              {isMonthOpen && (
-                <div className="hv-filter-menu" role="listbox" aria-label="Filter check-ins by month">
-                  {['all', ...monthOptions].map((key) => (
-                    <button
-                      key={key}
-                      type="button"
-                      className={`hv-filter-option${selectedMonth === key ? ' active' : ''}`}
-                      onClick={() => {
-                        setSelectedMonth(key);
-                        setIsMonthOpen(false);
-                      }}
-                    >
-                      <span>{formatMonthLabel(key)}</span>
-                      <span className={`hv-filter-check${selectedMonth === key ? ' active' : ''}`} />
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
           </div>
 
           <div className="hv-list-scroll">

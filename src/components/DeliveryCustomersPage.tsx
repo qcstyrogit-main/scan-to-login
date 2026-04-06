@@ -520,50 +520,9 @@ const DeliveryCustomersPage: React.FC = () => {
   };
   const createMutation = useMutation({
     mutationFn: async () => {
-      const fallbackInput =
-        customerInputRef.current?.value ||
-        (typeof document !== 'undefined'
-          ? (document.getElementById('customer-input') as HTMLInputElement | null)?.value
-          : '') ||
-        '';
-      const resolvedCustomerInput = (selectedCustomerId || customerInput || customerSearch || fallbackInput).trim();
-      const resolveCustomerId = async () => {
-        if (!resolvedCustomerInput) return '';
-        const res = await erpRequest('/api/method/qcmc_logic.api.customers.list_customers', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: {
-            limit: 10,
-            start: 0,
-            search: resolvedCustomerInput,
-            include_disabled: 0,
-          },
-        });
-        const payload = res.data?.message ?? res.data;
-        if (!res.ok || payload?.success === false) {
-          throw new Error(extractErrorMessage(payload, 'Unable to resolve customer'));
-        }
-        const items: CustomerRecord[] = Array.isArray(payload?.items) ? payload.items : [];
-        const lowered = resolvedCustomerInput.toLowerCase();
-        const exactMatches = items.filter(
-          (item) =>
-            item.name?.toLowerCase() === lowered ||
-            item.customer_name?.toLowerCase() === lowered
-        );
-        if (exactMatches.length === 1) {
-          return exactMatches[0].name;
-        }
-        if (exactMatches.length > 1) {
-          throw new Error('Customer match is ambiguous. Please use the Customer ID.');
-        }
-        if (items.length === 1) {
-          return items[0].name;
-        }
-        throw new Error('Customer not found. Please use the Customer ID.');
-      };
-      const resolvedCustomer = await resolveCustomerId();
+      const resolvedCustomer = selectedCustomerId.trim();
       if (!resolvedCustomer) {
-        throw new Error('Customer is required');
+        throw new Error('Please select a customer from the suggestions before saving.');
       }
       if (!form.location_name?.trim()) {
         throw new Error('Location Name is required');
@@ -792,9 +751,38 @@ const DeliveryCustomersPage: React.FC = () => {
           padding-bottom: calc(90px + env(safe-area-inset-bottom));
         }
         .cust-dialog-content {
-          max-height: 84vh;
+          width: min(92vw, 360px);
+          max-height: min(88vh, 760px);
           overflow-y: auto;
-          padding-bottom: calc(16px + env(safe-area-inset-bottom));
+          padding: 18px;
+          padding-bottom: calc(18px + env(safe-area-inset-bottom));
+          border-radius: 24px;
+        }
+        .cust-dialog-header {
+          display: none;
+        }
+        .cust-dialog-body {
+          display: flex;
+          flex-direction: column;
+          gap: 14px;
+        }
+        .cust-dialog-content .cust-form-input,
+        .cust-dialog-content .cust-select-btn,
+        .cust-dialog-content .cust-textarea,
+        .cust-dialog-content button {
+          border-radius: 12px;
+        }
+        .cust-dialog-content .cust-form-input,
+        .cust-dialog-content .cust-select-btn {
+          min-height: 46px;
+          border-color: hsl(var(--border) / 0.9);
+          background: hsl(var(--background));
+          box-shadow: inset 0 1px 2px hsl(var(--foreground) / 0.03);
+        }
+        .cust-dialog-content .cust-form-input[readonly],
+        .cust-dialog-content .cust-textarea[readonly] {
+          color: hsl(var(--foreground));
+          opacity: 1;
         }
         .cust-hero {
           background: linear-gradient(135deg, hsl(var(--card)) 0%, hsl(var(--secondary)) 100%);
@@ -864,17 +852,19 @@ const DeliveryCustomersPage: React.FC = () => {
         }
         .cust-textarea {
           width: 100%;
-          min-height: 96px;
+          min-height: 112px;
           resize: vertical;
-          padding: 10px 12px;
-          border-radius: 10px;
+          padding: 12px 14px;
+          border-radius: 12px;
           background: hsl(var(--background));
-          border: 1px solid hsl(var(--border));
+          border: 1px solid hsl(var(--border) / 0.9);
           color: hsl(var(--foreground));
-          font-size: 13px;
+          font-size: 14px;
+          line-height: 1.45;
           outline: none;
           font-family: 'Sora', sans-serif;
           transition: border-color 0.2s, background 0.2s;
+          box-shadow: inset 0 1px 2px hsl(var(--foreground) / 0.03);
         }
         .cust-textarea:focus {
           border-color: hsl(var(--primary) / 0.4);
@@ -928,6 +918,8 @@ const DeliveryCustomersPage: React.FC = () => {
         .cust-field-hint {
           font-size: 11px;
           color: hsl(var(--muted-foreground));
+          line-height: 1.35;
+          margin-top: 2px;
         }
         .cust-dropdown-wrap {
           position: relative;
@@ -980,11 +972,12 @@ const DeliveryCustomersPage: React.FC = () => {
           width: 100%;
           background: hsl(var(--background));
           color: hsl(var(--foreground));
-          border: 1px solid hsl(var(--border));
-          border-radius: 10px;
-          padding: 8px 12px;
-          font-size: 13px;
+          border: 1px solid hsl(var(--border) / 0.9);
+          border-radius: 12px;
+          padding: 11px 14px;
+          font-size: 14px;
           cursor: pointer;
+          min-height: 46px;
         }
         .cust-type-menu {
           position: absolute;
@@ -1121,14 +1114,51 @@ const DeliveryCustomersPage: React.FC = () => {
 
         .cust-form-grid {
           display: grid;
-          gap: 12px;
-          grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+          gap: 14px;
+          grid-template-columns: 1fr;
         }
 
         .cust-form-field {
           display: flex;
           flex-direction: column;
           gap: 6px;
+        }
+        .cust-form-field label {
+          font-size: 14px;
+          font-weight: 600;
+        }
+        .cust-form-input {
+          height: 46px;
+          padding: 11px 14px;
+          font-size: 14px;
+        }
+        .cust-form-span-2 {
+          grid-column: 1 / -1;
+        }
+        .cust-form-split {
+          display: grid;
+          gap: 12px;
+          grid-template-columns: minmax(0, 1fr) minmax(0, 0.72fr);
+          align-items: start;
+        }
+        .cust-dialog-actions {
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+          margin-top: 4px;
+        }
+        .cust-dialog-actions button {
+          width: 100%;
+          min-height: 46px;
+          font-size: 15px;
+          font-weight: 600;
+        }
+        .cust-dialog-actions .cust-save-btn {
+          background: #3f73ea;
+          color: white;
+        }
+        .cust-dialog-actions .cust-save-btn:hover {
+          background: #3568dd;
         }
 
         .cust-id {
@@ -1158,6 +1188,11 @@ const DeliveryCustomersPage: React.FC = () => {
           .cust-actions > * { width: 100%; }
           .cust-row {
             grid-template-columns: 1fr;
+          }
+          .cust-dialog-content {
+            width: min(95vw, 360px);
+            padding: 16px;
+            padding-bottom: calc(16px + env(safe-area-inset-bottom));
           }
         }
 
@@ -1368,16 +1403,18 @@ const DeliveryCustomersPage: React.FC = () => {
       </div>
 
       <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-        <DialogContent className="cust-dialog-content w-[94vw] max-w-2xl bg-card text-foreground border border-border rounded-2xl shadow-2xl">
-          <DialogHeader>
+        <DialogContent className="cust-dialog-content bg-card text-foreground border border-border shadow-2xl [&>button]:hidden">
+          <DialogHeader className="cust-dialog-header">
             <DialogTitle>Add Address</DialogTitle>
             <DialogDescription>Create a customer address record.</DialogDescription>
           </DialogHeader>
-          <div className="cust-form-grid">
-            <div className="cust-form-field" style={{ gridColumn: 'span 2' }}>
+          <div className="cust-dialog-body">
+            <div className="cust-form-grid">
+            <div className="cust-form-field cust-form-span-2">
               <Label>Customer</Label>
               <div className="cust-dropdown-wrap">
                   <Input
+                    className="cust-form-input"
                     ref={customerInputRef}
                     id="customer-input"
                     autoComplete="off"
@@ -1388,6 +1425,16 @@ const DeliveryCustomersPage: React.FC = () => {
                       setCustomerSearch(nextValue);
                       setShowCustomerDropdown(true);
                       setSelectedCustomerName(nextValue);
+                      if (!nextValue.trim()) {
+                        setSelectedCustomerId('');
+                        setSelectedCustomerName('');
+                      } else if (
+                        selectedCustomerId &&
+                        nextValue.trim() !== selectedCustomerName &&
+                        nextValue.trim() !== selectedCustomerId
+                      ) {
+                        setSelectedCustomerId('');
+                      }
                     }}
                   onFocus={() => setShowCustomerDropdown(true)}
                   onBlur={() => {
@@ -1406,8 +1453,8 @@ const DeliveryCustomersPage: React.FC = () => {
                           e.stopPropagation();
                           const selectedId = customer.name || '';
                           const selectedLabel = customer.customer_name || customer.name || '';
-                          setCustomerInput(selectedId || selectedLabel);
-                          setCustomerSearch(selectedId || selectedLabel);
+                          setCustomerInput(selectedLabel || selectedId);
+                          setCustomerSearch(selectedLabel || selectedId);
                           setSelectedCustomerId(selectedId);
                           setSelectedCustomerName(selectedLabel);
                           setAutoLocationName(true);
@@ -1424,19 +1471,20 @@ const DeliveryCustomersPage: React.FC = () => {
                 )}
               </div>
               <span className="cust-field-hint">
-                Start typing (min 2 chars) to search customers.
+                Start typing (min 2 chars) and select the customer from the suggestions.
               </span>
             </div>
-            <div className="cust-form-field" style={{ gridColumn: 'span 2' }}>
+            <div className="cust-form-field cust-form-span-2">
               <Label>Location Name</Label>
               <Input
+                className="cust-form-input"
                 value={form.location_name || ''}
                 autoComplete="off"
                 readOnly
                 placeholder="Customer Address Name"
               />
             </div>
-            <div className="cust-form-field" style={{ gridColumn: 'span 2' }}>
+            <div className="cust-form-field cust-form-span-2">
               {showAddressField && (
                 <>
                   <Label>Address</Label>
@@ -1460,65 +1508,70 @@ const DeliveryCustomersPage: React.FC = () => {
                 </>
               )}
             </div>
-            <div className="cust-form-field">
-              <Label>Address Type</Label>
-              <div className="cust-dropdown-wrap" ref={addressTypeRef}>
-                <button
-                  type="button"
-                  className="cust-select-btn"
-                  onClick={() => setAddressTypeOpen((prev) => !prev)}
-                >
-                  <span>{addressForm.address_type || 'Shipping'}</span>
-                  <span aria-hidden="true">▾</span>
-                </button>
-                {addressTypeOpen && (
-                  <div className="cust-type-menu" role="listbox">
-                    {ADDRESS_TYPE_OPTIONS.map((option) => (
-                      <button
-                        key={option}
-                        type="button"
-                        className="cust-type-item"
-                        onClick={() => {
-                          setAddressForm((prev) => ({ ...prev, address_type: option }));
-                          setAddressTypeOpen(false);
-                        }}
-                      >
-                        <span>{option}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
             {showGeoFields && (
-              <>
+              <div className="cust-form-split cust-form-span-2">
+                <div className="cust-form-field">
+                  <Label>Address Type</Label>
+                  <div className="cust-dropdown-wrap" ref={addressTypeRef}>
+                    <button
+                      type="button"
+                      className="cust-select-btn"
+                      onClick={() => setAddressTypeOpen((prev) => !prev)}
+                    >
+                      <span>{addressForm.address_type || 'Shipping'}</span>
+                      <span aria-hidden="true">▾</span>
+                    </button>
+                    {addressTypeOpen && (
+                      <div className="cust-type-menu" role="listbox">
+                        {ADDRESS_TYPE_OPTIONS.map((option) => (
+                          <button
+                            key={option}
+                            type="button"
+                            className="cust-type-item"
+                            onClick={() => {
+                              setAddressForm((prev) => ({ ...prev, address_type: option }));
+                              setAddressTypeOpen(false);
+                            }}
+                          >
+                            <span>{option}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
                 <div className="cust-form-field">
                   <Label>City</Label>
                   <Input
+                    className="cust-form-input"
                     value={addressForm.city}
                     readOnly
                     placeholder="City"
                   />
                 </div>
-                <div className="cust-form-field">
-                  <Label>Country</Label>
-                  <Input
-                    value={addressForm.country}
-                    readOnly
-                    placeholder="Country"
-                  />
-                </div>
-              </>
+              </div>
             )}
-            <div className="cust-form-field" style={{ gridColumn: 'span 2' }}>
+            {showGeoFields && (
+              <div className="cust-form-field cust-form-span-2">
+                <Label>Country</Label>
+                <Input
+                  className="cust-form-input"
+                  value={addressForm.country}
+                  readOnly
+                  placeholder="Country"
+                />
+              </div>
+            )}
+            <div className="cust-form-field cust-form-span-2">
               <Label>Email</Label>
               <Input
+                className="cust-form-input"
                 value={addressForm.email_id}
                 onChange={(e) => setAddressForm((prev) => ({ ...prev, email_id: e.target.value }))}
                 placeholder="email@example.com"
               />
             </div>
-            <div className="cust-form-field" style={{ gridColumn: 'span 2' }}>
+            <div className="cust-form-field cust-form-span-2">
               <Button
                 type="button"
                 variant="outline"
@@ -1530,22 +1583,23 @@ const DeliveryCustomersPage: React.FC = () => {
               </Button>
             </div>
           </div>
-          <DialogFooter className="mt-4 flex flex-col gap-2 sm:flex-row sm:justify-end">
-            <Button
-              variant="outline"
-              onClick={() => setIsCreateOpen(false)}
-              className="rounded-lg"
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={() => createMutation.mutate()}
-              disabled={createMutation.isPending}
-              className="rounded-lg"
-            >
-              {createMutation.isPending ? 'Saving...' : 'Save Address'}
-            </Button>
-          </DialogFooter>
+            <DialogFooter className="cust-dialog-actions">
+              <Button
+                variant="outline"
+                onClick={() => setIsCreateOpen(false)}
+                className="rounded-lg"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={() => createMutation.mutate()}
+                disabled={createMutation.isPending}
+                className="cust-save-btn rounded-lg"
+              >
+                {createMutation.isPending ? 'Saving...' : 'Save Address'}
+              </Button>
+            </DialogFooter>
+          </div>
         </DialogContent>
       </Dialog>
 
@@ -1591,10 +1645,6 @@ const DeliveryCustomersPage: React.FC = () => {
 };
 
 export default DeliveryCustomersPage;
-
-
-
-
 
 
 

@@ -134,23 +134,79 @@ const asRecord = (value: unknown): Record<string, unknown> | null => {
   return value as Record<string, unknown>;
 };
 
+const stripMarkup = (value: string) =>
+  value
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/&amp;/gi, "&")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const normalizeErrorText = (value: string) => {
+  const cleaned = stripMarkup(value);
+  if (!cleaned) return "";
+
+  const lower = cleaned.toLowerCase();
+  const methodMatch = cleaned.match(/([a-z0-9_]+\.)+[a-z0-9_]+/i);
+
+  if (lower.includes("not whitelisted")) {
+    return methodMatch
+      ? `ERP API method is not whitelisted: ${methodMatch[0]}. Contact the ERP administrator.`
+      : "ERP API method is not whitelisted. Contact the ERP administrator.";
+  }
+
+  if (lower.includes("not permitted to access this resource")) {
+    return "ERP denied access to this request. Check API permissions.";
+  }
+
+  return cleaned;
+};
+
+const readMessageString = (value: unknown): string => {
+  if (typeof value !== "string" || !value.trim()) {
+    return "";
+  }
+
+  const parsed = parsePossibleJson(value);
+  if (parsed !== value) {
+    if (Array.isArray(parsed)) {
+      const combined = parsed
+        .map((entry) => readMessageString(entry))
+        .filter(Boolean)
+        .join(" ");
+      if (combined) return combined;
+    }
+
+    const parsedRecord = asRecord(parsed);
+    if (parsedRecord) {
+      const title = typeof parsedRecord.message === "string" ? parsedRecord.message : "";
+      const body = typeof parsedRecord.title === "string" ? parsedRecord.title : "";
+      const combined = [title, body].filter(Boolean).join(" ");
+      if (combined) return combined;
+    }
+  }
+
+  return normalizeErrorText(value);
+};
+
 export const extractErrorMessage = (data: unknown, fallback: string) => {
   if (typeof data === "string" && data.trim()) {
-    return data;
+    return readMessageString(data);
   }
   const record = asRecord(data);
-  const message = record && typeof record.message === "string" ? record.message : "";
-  if (message.trim()) return message;
+  const message = record ? readMessageString(record.message) : "";
+  if (message) return message;
 
-  const exception = record && typeof record.exception === "string" ? record.exception : "";
-  if (exception.trim()) return exception;
+  const exception = record ? readMessageString(record.exception) : "";
+  if (exception) return exception;
 
-  const exc = record && typeof record.exc === "string" ? record.exc : "";
-  if (exc.trim()) return exc;
+  const exc = record ? readMessageString(record.exc) : "";
+  if (exc) return exc;
 
   const serverMessages =
-    record && typeof record._server_messages === "string" ? record._server_messages : "";
-  if (serverMessages.trim()) return serverMessages;
+    record ? readMessageString(record._server_messages) : "";
+  if (serverMessages) return serverMessages;
 
   return fallback;
 };

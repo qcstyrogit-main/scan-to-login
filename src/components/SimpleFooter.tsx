@@ -1,5 +1,5 @@
 import React from 'react';
-import { Clock } from 'lucide-react';
+import appLogo from '@/assets/app-logo-transparent.png';
 
 const SimpleFooter: React.FC = () => {
   return (
@@ -30,15 +30,10 @@ const SimpleFooter: React.FC = () => {
           pointer-events: none;
         }
 
-        .footer-badge {
-          width: 34px;
-          height: 34px;
-          border-radius: 10px;
-          background: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary) / 0.8));
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          box-shadow: 0 0 0 3px hsl(var(--primary) / 0.25);
+        .footer-logo {
+          width: 42px;
+          height: 42px;
+          object-fit: contain;
           flex-shrink: 0;
         }
 
@@ -50,9 +45,7 @@ const SimpleFooter: React.FC = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <div className="flex flex-col md:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-3">
-              <div className="footer-badge">
-                <Clock className="w-4 h-4 text-white" />
-              </div>
+              <img src={appLogo} alt="GeoTime QCMC logo" className="footer-logo" />
               <span className="footer-brand">GeoTime QCMC</span>
             </div>
             <p className="footer-note">(c) 2026 GeoTime QCMC. All rights reserved.</p>

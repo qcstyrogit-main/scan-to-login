@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Checkin } from '@/types';
 import { Clock, LogIn, LogOut, Coffee, Calendar, Filter, Search, Download, ChevronDown, Activity, Save, X } from 'lucide-react';
 import { Employee } from '@/types';
+import { buildActivitiesWithProcessingRemark, stripProcessingRemark } from '@/lib/checkinActivities';
 import { updateCheckinActivities } from '@/lib/erpService';
 import { toast } from '@/components/ui/sonner';
 
@@ -28,11 +29,15 @@ const CheckinHistory: React.FC<CheckinHistoryProps> = ({ checkins, currentEmploy
 
   const startEdit = (checkinId: string, currentActivities?: string) => {
     setEditingId(checkinId);
-    setActivitiesText({ ...activitiesText, [checkinId]: currentActivities || '' });
+    setActivitiesText({ ...activitiesText, [checkinId]: stripProcessingRemark(currentActivities) });
   };
 
   const saveActivities = async (checkinId: string) => {
-    const activities = activitiesText[checkinId] || '';
+    const currentCheckin = checkins.find((checkin) => checkin.id === checkinId);
+    const activities = buildActivitiesWithProcessingRemark(
+      activitiesText[checkinId] || '',
+      currentCheckin?.processingMode === 'offline' ? 'offline' : 'online'
+    );
     try {
       await updateCheckinActivities(checkinId, activities);
       toast.success('Activities updated successfully');

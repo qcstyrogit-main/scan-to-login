@@ -1,5 +1,6 @@
 ﻿import React, { useState } from 'react';
 import { Clock, Shield, Users, Zap, Eye, EyeOff, Loader2 } from 'lucide-react';
+import appLogo from '@/assets/app-logo-transparent.png';
 
 interface LoginPageProps {
   onLogin: (email: string, password: string) => void;
@@ -71,14 +72,13 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, isLoading = false, error
         @media (min-width: 1024px) { .lp-left { display: flex; } }
 
         .lp-logo {
-          display: flex; align-items: center; gap: 12px;
+          display: flex; align-items: center; gap: 16px;
           margin-bottom: 52px;
         }
-        .lp-logo-icon {
-          width: 46px; height: 46px; border-radius: 13px;
-          background: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary) / 0.8));
-          display: flex; align-items: center; justify-content: center;
-          box-shadow: 0 0 0 3px hsl(var(--primary) / 0.2), 0 8px 24px hsl(var(--primary) / 0.25);
+        .lp-logo-image {
+          width: 88px;
+          height: 88px;
+          object-fit: contain;
           flex-shrink: 0;
         }
         .lp-logo-name {
@@ -147,10 +147,14 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, isLoading = false, error
 
         /* Mobile logo */
         .lp-mobile-logo {
-          display: flex; align-items: center; justify-content: center; gap: 10px;
+          display: flex; align-items: center; justify-content: center; gap: 12px;
           margin-bottom: 32px;
         }
         @media (min-width: 1024px) { .lp-mobile-logo { display: none; } }
+        .lp-mobile-logo .lp-logo-image {
+          width: 72px;
+          height: 72px;
+        }
 
         /* Form card */
         .lp-card {
@@ -266,9 +270,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, isLoading = false, error
           <div className="lp-divider" />
 
           <div className="lp-logo">
-            <div className="lp-logo-icon">
-              <Clock size={22} color="white" />
-            </div>
+            <img src={appLogo} alt="GeoTime QCMC logo" className="lp-logo-image" />
             <span className="lp-logo-name">GeoTime QCMC</span>
           </div>
 
@@ -303,9 +305,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, isLoading = false, error
 
             {/* Mobile logo */}
             <div className="lp-mobile-logo">
-              <div className="lp-logo-icon">
-                <Clock size={20} color="white" />
-              </div>
+              <img src={appLogo} alt="GeoTime QCMC logo" className="lp-logo-image" />
               <span className="lp-logo-name">GeoTime QCMC</span>
             </div>
 

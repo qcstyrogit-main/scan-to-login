@@ -40,6 +40,16 @@ const ScanView: React.FC<ScanViewProps> = ({
   const isCustomerRequired = isAccountManager && nextCheckType === 'in';
   const showActivities = nextCheckType === 'out';
 
+  const isCustomerSearchEmptyStateError = (message: string) => {
+    const lower = message.toLowerCase();
+    return (
+      lower.includes('permissionerror') ||
+      lower.includes('permission') ||
+      lower.includes('not permitted') ||
+      lower.includes('access denied')
+    );
+  };
+
   useEffect(() => {
     if (nextCheckType === 'in') {
       setActivitiesInput('');
@@ -55,14 +65,8 @@ const ScanView: React.FC<ScanViewProps> = ({
 
   const resolveCustomerName = () => {
     if (selectedCustomerName) return selectedCustomerName;
-    const input = customerInput.trim();
-    if (!input) return '';
-    const match = customerItems.find(
-      (item) =>
-        item?.name?.toLowerCase() === input.toLowerCase() ||
-        item?.customer_name?.toLowerCase() === input.toLowerCase()
-    );
-    return (match?.customer_name || match?.name || input).trim();
+    if (selectedCustomerId) return selectedCustomerId;
+    return customerInput.trim();
   };
 
   const CUSTOMER_CACHE_KEY = 'customer_cache_v1';
@@ -155,15 +159,13 @@ const ScanView: React.FC<ScanViewProps> = ({
       } catch (err) {
         if (active) {
           const cached = filterCustomerCache(query);
+          const errorMessage =
+            err instanceof Error ? err.message : 'Unable to load customers';
+          const shouldShowEmptyState =
+            cached.length === 0 && isCustomerSearchEmptyStateError(errorMessage);
           setCustomerItems(cached);
           setCustomerLoading(false);
-          setCustomerError(
-            cached.length === 0
-              ? err instanceof Error
-                ? err.message
-                : 'Unable to load customers'
-              : null
-          );
+          setCustomerError(cached.length === 0 && !shouldShowEmptyState ? errorMessage : null);
           if (cached.length > 0) setCustomerCacheHint('Showing cached customers.');
         }
       }
@@ -487,6 +489,17 @@ const ScanView: React.FC<ScanViewProps> = ({
                         const nextValue = e.target.value ?? '';
                         setCustomerInput(nextValue);
                         setShowCustomerDropdown(true);
+                        if (!nextValue.trim()) {
+                          setSelectedCustomerId('');
+                          setSelectedCustomerName('');
+                        } else if (
+                          selectedCustomerId &&
+                          nextValue.trim() !== selectedCustomerName &&
+                          nextValue.trim() !== selectedCustomerId
+                        ) {
+                          setSelectedCustomerId('');
+                          setSelectedCustomerName('');
+                        }
                       }}
                       onFocus={() => setShowCustomerDropdown(true)}
                       onBlur={() => setTimeout(() => setShowCustomerDropdown(false), 150)}

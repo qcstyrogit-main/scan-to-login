@@ -20,6 +20,7 @@ import DeliveryPage from '@/components/DeliveryPage';
 import DeliveryHistoryPage from '@/components/DeliveryHistoryPage';
 import DeliveryCustomersPage from '@/components/DeliveryCustomersPage';
 import SimpleFooter from '@/components/SimpleFooter';
+import { buildActivitiesWithProcessingRemark } from '@/lib/checkinActivities';
 import { getCurrentLocation } from '@/lib/location';
 import {
   createEmployeeCheckin,
@@ -32,6 +33,7 @@ import { setErpSid } from '@/lib/erpApi';
 const EMPLOYEE_STORAGE_KEY = 'employee';
 const BIOMETRIC_STORAGE_KEY = 'settings.biometricEnabled';
 const PENDING_CHECKINS_KEY = 'pending_checkins_v1';
+const OFFLINE_CHECKIN_META_KEY = 'offline_checkin_meta_v1';
 const GEOFENCE_CACHE_KEY = 'geofence_cache_v1';
 const GEOFENCE_CACHE_TTL_MS = 30 * 60 * 1000;
 const GEOFENCE_REFRESH_MS = 5 * 60 * 1000;
@@ -46,6 +48,12 @@ type PendingCheckin = {
   timestamp: string;
   customCustomer?: string;
   customActivities?: string;
+};
+
+type OfflineCheckinMeta = {
+  employeeId: string;
+  checkinId: string;
+  createdAt: string;
 };
 
 type GeofenceCache = {
@@ -71,6 +79,26 @@ const loadPendingCheckins = (): PendingCheckin[] => {
 const savePendingCheckins = (items: PendingCheckin[]) => {
   try {
     localStorage.setItem(PENDING_CHECKINS_KEY, JSON.stringify(items));
+  } catch {
+    // ignore storage failures
+  }
+};
+
+const loadOfflineCheckinMeta = (): OfflineCheckinMeta[] => {
+  try {
+    const raw = localStorage.getItem(OFFLINE_CHECKIN_META_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed as OfflineCheckinMeta[];
+  } catch {
+    return [];
+  }
+};
+
+const saveOfflineCheckinMeta = (items: OfflineCheckinMeta[]) => {
+  try {
+    localStorage.setItem(OFFLINE_CHECKIN_META_KEY, JSON.stringify(items));
   } catch {
     // ignore storage failures
   }
@@ -229,6 +257,7 @@ const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) => (
         display: flex;
         flex-direction: column;
         font-family: 'Sora', sans-serif;
+        padding-top: env(safe-area-inset-top);
       }
       .app-main {
         flex: 1;
@@ -239,7 +268,12 @@ const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) => (
       }
       @media (min-width: 640px) { .app-main { padding: 24px 20px 48px; } }
       @media (min-width: 1024px) { .app-main { padding: 28px 32px 56px; } }
-      @media (max-width: 767px) { .app-main { padding-bottom: 90px; } }
+      @media (max-width: 767px) {
+        .app-main {
+          padding-top: calc(12px + env(safe-area-inset-top));
+          padding-bottom: 90px;
+        }
+      }
 
       /* Global scrollbar for dark theme */
       ::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -249,7 +283,7 @@ const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) => (
 
       .offline-banner {
         position: fixed;
-        top: 0;
+        top: env(safe-area-inset-top);
         left: 0;
         right: 0;
         height: 36px;
@@ -267,7 +301,7 @@ const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) => (
         background: #16a34a;
       }
       .offline-spacer {
-        height: 36px;
+        height: calc(36px + env(safe-area-inset-top));
         width: 100%;
       }
       .sync-banner {
@@ -289,7 +323,7 @@ const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) => (
         background: #0ea5e9;
       }
       .sync-spacer {
-        height: 32px;
+        height: calc(32px + env(safe-area-inset-top));
         width: 100%;
       }
     `}</style>
@@ -397,7 +431,7 @@ const AppLayout: React.FC = () => {
       let syncedCount = 0;
       for (const item of currentEmployeeItems) {
         try {
-          await createEmployeeCheckin({
+          const syncedCheckin = await createEmployeeCheckin({
             employee,
             checkType: item.checkType,
             latitude: item.latitude,
@@ -406,6 +440,15 @@ const AppLayout: React.FC = () => {
             customCustomer: item.customCustomer,
             customActivities: item.customActivities,
           });
+          const existingMeta = loadOfflineCheckinMeta();
+          saveOfflineCheckinMeta([
+            {
+              employeeId: employee.id,
+              checkinId: syncedCheckin.id,
+              createdAt: item.timestamp,
+            },
+            ...existingMeta.filter((meta) => meta.checkinId !== syncedCheckin.id),
+          ]);
           syncedCount += 1;
         } catch {
           remaining.push(item);
@@ -525,7 +568,19 @@ const AppLayout: React.FC = () => {
     onError: (err) => toast.error(getErrorMessage(err, 'Unable to load check-ins')),
   });
 
-  const checkins = useMemo(() => checkinsQuery.data ?? [], [checkinsQuery.data]);
+  const checkins = useMemo(() => {
+    const items = checkinsQuery.data ?? [];
+    if (!employee) return items;
+    const offlineMeta = loadOfflineCheckinMeta()
+      .filter((item) => item.employeeId === employee.id);
+    const offlineIds = new Set(offlineMeta.map((item) => item.checkinId));
+
+    return items.map((checkin) => ({
+      ...checkin,
+      processingMode: offlineIds.has(checkin.id) ? 'offline' : 'online',
+      syncStatus: offlineIds.has(checkin.id) ? 'synced' : 'synced',
+    }));
+  }, [checkinsQuery.data, employee]);
   const latestCheckin = checkins[0];
 
   const geofenceQuery = useQuery({
@@ -694,6 +749,9 @@ const AppLayout: React.FC = () => {
         }
       }
       const { latitude, longitude } = await getCurrentLocation('checkin');
+      const processedActivities = checkType === 'out'
+        ? buildActivitiesWithProcessingRemark(data?.activities?.trim(), isOnline ? 'online' : 'offline')
+        : undefined;
 
       if (!isOnline) {
         const cached = loadGeofenceCache();
@@ -716,7 +774,7 @@ const AppLayout: React.FC = () => {
           deviceId,
           timestamp: new Date().toISOString(),
           customCustomer: checkType === 'in' ? data?.customerName?.trim() : undefined,
-          customActivities: checkType === 'out' ? data?.activities?.trim() : undefined,
+          customActivities: processedActivities,
         };
         const pending = loadPendingCheckins();
         savePendingCheckins([pendingItem, ...pending]);
@@ -729,6 +787,9 @@ const AppLayout: React.FC = () => {
           latitude,
           longitude,
           location: 'Offline (pending sync)',
+          custom_activities: pendingItem.customActivities,
+          processingMode: 'offline' as const,
+          syncStatus: 'pending' as const,
         };
         queryClient.setQueryData<Checkin[]>(['checkins', employee.id], (prev = []) => [optimistic, ...prev]);
         toast.success(checkType === 'in' ? 'Checked in offline. Will sync when online.' : 'Checked out offline. Will sync when online.');
@@ -753,7 +814,7 @@ const AppLayout: React.FC = () => {
         latitude,
         longitude,
         customCustomer: checkType === 'in' ? data?.customerName?.trim() : undefined,
-        customActivities: checkType === 'out' ? data?.activities?.trim() : undefined,
+        customActivities: processedActivities,
       });
     } catch (err) {
       toast.error(getErrorMessage(err, 'Check-in failed'));
@@ -800,7 +861,7 @@ const AppLayout: React.FC = () => {
         <>
           <div
             className={`sync-banner${syncBanner.type === 'success' ? ' success' : ''}`}
-            style={{ top: isAndroidNative && (!isOnline || showOnlineBanner) ? 36 : 0 }}
+            style={{ top: isAndroidNative && (!isOnline || showOnlineBanner) ? 'calc(env(safe-area-inset-top) + 36px)' : 'env(safe-area-inset-top)' }}
           >
             {syncBanner.message}
           </div>
@@ -809,7 +870,7 @@ const AppLayout: React.FC = () => {
       )}
       {offlineRestoreBanner && (
         <>
-          <div className="sync-banner" style={{ top: isAndroidNative && (!isOnline || showOnlineBanner) ? 36 : 0 }}>
+          <div className="sync-banner" style={{ top: isAndroidNative && (!isOnline || showOnlineBanner) ? 'calc(env(safe-area-inset-top) + 36px)' : 'env(safe-area-inset-top)' }}>
             Offline session restored
           </div>
           <div className="sync-spacer" />

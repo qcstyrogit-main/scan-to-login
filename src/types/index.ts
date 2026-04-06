@@ -24,6 +24,8 @@ export interface Checkin {
   custom_activities?: string;
   latitude?: number;
   longitude?: number;
+  processingMode?: 'offline' | 'online';
+  syncStatus?: 'pending' | 'synced';
 }
 
 export type ViewType =

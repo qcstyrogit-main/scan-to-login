@@ -1,6 +1,7 @@
 import React from 'react';
 import { Employee, ViewType } from '@/types';
 import { Home, Clock, User, Users, Settings, Truck, History, Hand } from 'lucide-react';
+import appLogo from '@/assets/app-logo-transparent.png';
 
 interface NavigationProps {
   employee: Employee;
@@ -116,11 +117,10 @@ const Navigation: React.FC<NavigationProps> = ({
 
         /* Logo */
         .nav-logo { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
-        .nav-logo-icon {
-          width: 34px; height: 34px; border-radius: 9px;
-          background: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary) / 0.8));
-          display: flex; align-items: center; justify-content: center;
-          box-shadow: 0 0 0 2px hsl(var(--primary) / 0.2);
+        .nav-logo-image {
+          width: 40px;
+          height: 40px;
+          object-fit: contain;
           flex-shrink: 0;
         }
         .nav-logo-name {
@@ -314,9 +314,7 @@ const Navigation: React.FC<NavigationProps> = ({
 
           {/* Logo */}
           <div className="nav-logo">
-            <div className="nav-logo-icon">
-              <Clock size={17} color="white" />
-            </div>
+            <img src={appLogo} alt="GeoTime QCMC logo" className="nav-logo-image" />
             <span className="nav-logo-name">GeoTime QCMC</span>
           </div>
 
